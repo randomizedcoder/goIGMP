@@ -13,16 +13,16 @@ import (
 // https://pkg.go.dev/golang.org/x/net@v0.22.0/ipv4#RawConn
 // https://pkg.go.dev/golang.org/x/net@v0.22.0/ipv4#example-RawConn-AdvertisingOSPFHello
 
-func (r IGMPReporter) selfQuery() {
+func (r IGMPReporter) selfQuery(interf side) {
 	const (
 		minQueryDurationCst         = 1 * time.Second
 		igmpQueryMaxResponseTimeCst = 10 * time.Second
 	)
 
-	debugLog(r.debugLevel > 10, "selfQuery() - don't do this at home folks")
+	debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery(%s) - don't do this at home folks", interf))
 
-	if r.queryTime < minQueryDurationCst {
-		debugLog(r.debugLevel > 10, "selfQuery() - queryTime < minQueryDurationCst")
+	if r.TimerDuration[QUERY] < minQueryDurationCst {
+		debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery(%s) - queryTime < minQueryDurationCst", interf))
 		return
 	}
 
@@ -38,39 +38,39 @@ func (r IGMPReporter) selfQuery() {
 	igmp := &IGMP{
 		Type:         layers.IGMPMembershipQuery,
 		Version:      3,
-		GroupAddress: multicastNetIP[allZerosHosts],
+		GroupAddress: r.mapIPtoNetIP[allZerosHosts],
 		//GroupAddress:    net.ParseIP("232.1.1.1"), There is a bug.  This turns out as 232.1.0.0 currently
 		MaxResponseTime: igmpQueryMaxResponseTimeCst,
 	}
 
 	err := gopacket.SerializeLayers(buffer, options, igmp)
 	if err != nil {
-		log.Fatal("sendMembershipReport() SerializeLayers err:", err)
+		log.Fatal(fmt.Sprintf("selfQuery(%s) SerializeLayers err:", interf), err)
 	}
 
 	igmpPayload := buffer.Bytes()
 	iph := r.ipv4Header(len(igmpPayload), IGMPHosts)
 
-	t := time.NewTicker(r.queryTime)
+	t := time.NewTicker(r.TimerDuration[QUERY])
 	defer t.Stop()
 
 	for loops := 0; ; loops++ {
 
-		debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery() loops:%d", loops))
+		debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery(%s) loops:%d", interf, loops))
 
 		<-t.C
 
-		debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery() tick loops:%d", loops))
+		debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery(%s) tick loops:%d", interf, loops))
 
-		err := r.raw.SetWriteDeadline(time.Now().Add(writeDeadlineCst))
+		err := r.conRaw[interf].SetWriteDeadline(time.Now().Add(writeDeadlineCst))
 		if err != nil {
-			log.Fatal("selfQuery() SetWriteDeadline err:", err)
+			log.Fatal(fmt.Sprintf("selfQuery(%s) SetWriteDeadline err:", interf), err)
 		}
 
-		if err := r.raw.WriteTo(iph, igmpPayload, r.cm); err != nil {
-			log.Fatal("selfQuery() err:", err)
+		if err := r.conRaw[interf].WriteTo(iph, igmpPayload, r.ContMsg[interf]); err != nil {
+			log.Fatal(fmt.Sprintf("selfQuery(%s) WriteTo err:", interf), err)
 		}
 
-		debugLog(r.debugLevel > 10, "selfQuery() WriteTo success!")
+		debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery(%s) - WriteTo success, len(igmpPayload):%d", interf, len(igmpPayload)))
 	}
 }

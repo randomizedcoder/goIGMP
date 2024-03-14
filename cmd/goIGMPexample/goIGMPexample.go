@@ -21,15 +21,31 @@ const (
 
 	signalChannelSize = 10
 
-	promListenCst           = ":9901"
+	promListenCst           = ":7500"
 	promPathCst             = "/metrics"
 	promMaxRequestsInFlight = 10
 	promEnableOpenMetrics   = true
 
-	intNameCst = "wlp0s20f3"
+	inNameCst  = "br-siden"
+	outNameCst = "enp1s0"
+
+	ProxyOutToInCst                 = true
+	ProxyInToOutCst                 = false
+	UnicastProxyInToOutCst          = true
+	QueryNotifyCst                  = false
+	MembershipReportsFromNetworkCst = false
+	MembershipReportsToNetworkCst   = false
+	UnicastMembershipReportsCst     = false
+	ConnectQueryToReportCst         = false
+
+	hackFilenameCst = "../../pcaps/ipmpv3_membership_report_s_172.17.200.10_g_232_0_0_1.payload"
+
+	channelSizeCst = 10
+
 	//joinTTLCst    = 60 * time.Second
-	gratuitousCst = 10 * time.Second // These should be longer!!
+	gratuitousCst = 600 * time.Second // These should be longer!!
 	selfQueryCst  = 5 * time.Second
+	loopbackCst   = false
 )
 
 var (
@@ -55,11 +71,35 @@ func main() {
 	// curl -s http://[::1]:9111/metrics 2>&1 | grep -v "#"
 	// curl -s http://127.0.0.1:9111/metrics 2>&1 | grep -v "#"
 
-	intName := flag.String("intName", intNameCst, "interface to listen & send on")
-	//ttl := flag.Duration("ttl", joinTTLCst, "join ttl")
+	inName := flag.String("inName", inNameCst, "inside interface to listen & send on")
+	outName := flag.String("outName", outNameCst, "outside interface to listen & send on")
+
+	proxyOutIn := flag.Bool("proxyOutIn", false, "Proxy IGMP from the outside to the inside")
+	proxyInOut := flag.Bool("proxyInOut", false, "Proxy IGMP from the inside to the outside")
+	// proxyOutIn := flag.Bool("proxyOutIn", ProxyOutToInCst, "Proxy IGMP from the outside to the inside")
+	// proxyInOut := flag.Bool("proxyInOut", ProxyInToOutCst, "Proxy IGMP from the inside to the outside")
+	//unicastProxyInToOut := flag.Bool("unicastProxyInOut", UnicastProxyInToOutCst, "Proxy unicast IGMP from the inside to outside multicast")
+	unicastProxyInToOut := flag.Bool("unicastProxyInOut", false, "Proxy unicast IGMP from the inside to outside multicast")
+	queryNotify := flag.Bool("queryNotify", false, "Listen for IGMP queries and notify on QueryNotifyCh")
+	//queryNotify := flag.Bool("queryNotify", QueryNotifyCst, "Listen for IGMP queries and notify on QueryNotifyCh")
+	membershipReportsFromNetwork := flag.Bool("membershipReportsFromNetwork", false, "Listen for IGMP membership reports and notify on MembershipReportFromNetworkCh")
+	//membershipReportsFromNetwork := flag.Bool("membershipReportsFromNetwork", MembershipReportsFromNetworkCst, "Listen for IGMP membership reports and notify on MembershipReportFromNetworkCh")
+	membershipReportsToNetwork := flag.Bool("membershipReportsToNetwork", false, "Read from MembershipReportToNetworkCh and send IGMP membership reports")
+	//membershipReportsToNetwork := flag.Bool("membershipReportsToNetwork", MembershipReportsToNetworkCst, "Read from MembershipReportToNetworkCh and send IGMP membership reports")
+	unicastMembershipReports := flag.Bool("unicastMembershipReports", false, "Send IGMP membership reports as unicast")
+	//unicastMembershipReports := flag.Bool("unicastMembershipReports", UnicastMembershipReportsCst, "Send IGMP membership reports as unicast")
+	connectQueryToReport := flag.Bool("connectQueryToReport", false, "Connect the query notify channel to the membership report channel.  This is for testing only.")
+	//connectQueryToReport := flag.Bool("connectQueryToReport", ConnectQueryToReportCst, "Connect the query notify channel to the membership report channel.  This is for testing only.")
+
+	filename := flag.String("filename", hackFilenameCst, "filename of file with igmp membership payload")
+
+	channelSize := flag.Int("channelSize", channelSizeCst, "channel size")
+
 	gratuitous := flag.Duration("gratuitous", gratuitousCst, "gratuitous duration to send gratuitous reports")
 
 	selfQuery := flag.Duration("selfQuery", selfQueryCst, "self query")
+
+	loopback := flag.Bool("loopback", loopbackCst, "Enable loopback on the multicast send sockets")
 
 	dl := flag.Int("dl", debugLevelCst, "nasty debugLevel")
 
@@ -72,9 +112,28 @@ func main() {
 
 	go initPromHandler(*promPath, *promListen)
 
-	r := goIGMP.NewIGMPReporter(*intName, *gratuitous, *selfQuery, *dl)
+	conf := &goIGMP.Config{
+		InIntName:                    *inName,
+		OutIntName:                   *outName,
+		ProxyOutToIn:                 *proxyOutIn,
+		ProxyInToOut:                 *proxyInOut,
+		UnicastProxyInToOut:          *unicastProxyInToOut,
+		QueryNotify:                  *queryNotify,
+		MembershipReportsFromNetwork: *membershipReportsFromNetwork,
+		MembershipReportsToNetwork:   *membershipReportsToNetwork,
+		UnicastMembershipReports:     *unicastMembershipReports,
+		ConnectQueryToReport:         *connectQueryToReport,
+		ChannelSize:                  *channelSize,
+		Gratuitous:                   *gratuitous,
+		QueryTime:                    *selfQuery,
+		Loopback:                     *loopback,
+		HackPayloadFilename:          *filename,
+		DebugLevel:                   *dl,
+	}
 
-	log.Println("r created")
+	r := goIGMP.NewIGMPReporter(*conf)
+
+	log.Println("goIGMPExample.go r created")
 
 	r.Run()
 }

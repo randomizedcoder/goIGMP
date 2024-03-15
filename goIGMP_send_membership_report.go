@@ -39,6 +39,12 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []member
 	// 	allowGroupAddressCst = "232.0.0.1"
 	// )
 
+	startTime := time.Now()
+	defer func() {
+		r.pH.WithLabelValues("sendMembershipReport", "start", "complete").Observe(time.Since(startTime).Seconds())
+	}()
+	r.pC.WithLabelValues("sendMembershipReport", "start", "count").Inc()
+
 	debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport(%s)", interf))
 
 	debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport() should send based on membershipItems, but doesn't yet!:%v", membershipItems))
@@ -97,7 +103,19 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []member
 	// igmpPayload := buffer.Bytes()
 	//iph := r.ipv4Header(len(igmpPayload), IGMPHosts)
 
-	iph := r.ipv4Header(len(r.membershipReportPayloadHack), IGMPHosts)
+	var dest destIP
+	if r.conf.UnicastMembershipReports {
+		debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport(%s) UnicastMembershipReports dest = QueryHost", interf))
+		dest = QueryHost
+	} else {
+		dest = IGMPHosts
+	}
+
+	iph := r.ipv4Header(len(r.membershipReportPayloadHack), dest)
+
+	if r.debugLevel > 10 {
+		debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport(%s) iph:%v", interf, iph))
+	}
 
 	errSWD := r.conRaw[interf].SetWriteDeadline(time.Now().Add(writeDeadlineCst))
 	if errSWD != nil {

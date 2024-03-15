@@ -51,9 +51,10 @@ mount:
 
 proxyTest:
 	./${BINARY} \
+		-outName enp1s0 \
+		-inName br-siden \
 		-proxyOutIn \
-		-unicastProxyInToOut \
-		-queryNotify
+		-unicastProxyInToOut
 
 uniTest:
 	./${BINARY} \

@@ -26,8 +26,9 @@ const (
 	promMaxRequestsInFlight = 10
 	promEnableOpenMetrics   = true
 
-	inNameCst  = "br-siden"
-	outNameCst = "enp1s0"
+	inNameCst     = "lo"
+	outNameCst    = "eth0"
+	unicastDstCst = "10.99.0.1"
 
 	ProxyOutToInCst                 = true
 	ProxyInToOutCst                 = false
@@ -74,12 +75,14 @@ func main() {
 	inName := flag.String("inName", inNameCst, "inside interface to listen & send on")
 	outName := flag.String("outName", outNameCst, "outside interface to listen & send on")
 
+	unicastDst := flag.String("unicastDst", unicastDstCst, "Fallback unicast destination for the unicast membership reports")
+
 	proxyOutIn := flag.Bool("proxyOutIn", false, "Proxy IGMP from the outside to the inside")
 	proxyInOut := flag.Bool("proxyInOut", false, "Proxy IGMP from the inside to the outside")
 	// proxyOutIn := flag.Bool("proxyOutIn", ProxyOutToInCst, "Proxy IGMP from the outside to the inside")
 	// proxyInOut := flag.Bool("proxyInOut", ProxyInToOutCst, "Proxy IGMP from the inside to the outside")
-	//unicastProxyInToOut := flag.Bool("unicastProxyInOut", UnicastProxyInToOutCst, "Proxy unicast IGMP from the inside to outside multicast")
-	unicastProxyInToOut := flag.Bool("unicastProxyInOut", false, "Proxy unicast IGMP from the inside to outside multicast")
+	//unicastProxyInToOut := flag.Bool("unicastProxyInToOut", UnicastProxyInToOutCst, "Proxy unicast IGMP from the inside to outside multicast")
+	unicastProxyInToOut := flag.Bool("unicastProxyInToOut", false, "Proxy unicast IGMP from the inside to outside multicast")
 	queryNotify := flag.Bool("queryNotify", false, "Listen for IGMP queries and notify on QueryNotifyCh")
 	//queryNotify := flag.Bool("queryNotify", QueryNotifyCst, "Listen for IGMP queries and notify on QueryNotifyCh")
 	membershipReportsFromNetwork := flag.Bool("membershipReportsFromNetwork", false, "Listen for IGMP membership reports and notify on MembershipReportFromNetworkCh")
@@ -88,8 +91,9 @@ func main() {
 	//membershipReportsToNetwork := flag.Bool("membershipReportsToNetwork", MembershipReportsToNetworkCst, "Read from MembershipReportToNetworkCh and send IGMP membership reports")
 	unicastMembershipReports := flag.Bool("unicastMembershipReports", false, "Send IGMP membership reports as unicast")
 	//unicastMembershipReports := flag.Bool("unicastMembershipReports", UnicastMembershipReportsCst, "Send IGMP membership reports as unicast")
-	connectQueryToReport := flag.Bool("connectQueryToReport", false, "Connect the query notify channel to the membership report channel.  This is for testing only.")
+	connectQueryToReport := flag.Bool("connectQueryToReport", false, "Testing Option. Connect the query notify channel to the membership report channel.  This is for testing only.")
 	//connectQueryToReport := flag.Bool("connectQueryToReport", ConnectQueryToReportCst, "Connect the query notify channel to the membership report channel.  This is for testing only.")
+	membershipReportsReader := flag.Bool("membershipReportsReader", false, "Testing Option. Start a goroutine to read the membership report channel to stop is getting full and blocking.")
 
 	filename := flag.String("filename", hackFilenameCst, "filename of file with igmp membership payload")
 
@@ -99,7 +103,7 @@ func main() {
 
 	selfQuery := flag.Duration("selfQuery", selfQueryCst, "self query")
 
-	loopback := flag.Bool("loopback", loopbackCst, "Enable loopback on the multicast send sockets")
+	mloopback := flag.Bool("mloopback", loopbackCst, "Enable loopback on the multicast send sockets")
 
 	dl := flag.Int("dl", debugLevelCst, "nasty debugLevel")
 
@@ -112,9 +116,16 @@ func main() {
 
 	go initPromHandler(*promPath, *promListen)
 
+	testing := &goIGMP.TestingOptions{
+		MulticastLoopback:       *mloopback,
+		ConnectQueryToReport:    *connectQueryToReport,
+		MembershipReportsReader: *membershipReportsReader,
+	}
+
 	conf := &goIGMP.Config{
 		InIntName:                    *inName,
 		OutIntName:                   *outName,
+		UnicastDst:                   *unicastDst,
 		ProxyOutToIn:                 *proxyOutIn,
 		ProxyInToOut:                 *proxyInOut,
 		UnicastProxyInToOut:          *unicastProxyInToOut,
@@ -122,13 +133,12 @@ func main() {
 		MembershipReportsFromNetwork: *membershipReportsFromNetwork,
 		MembershipReportsToNetwork:   *membershipReportsToNetwork,
 		UnicastMembershipReports:     *unicastMembershipReports,
-		ConnectQueryToReport:         *connectQueryToReport,
 		ChannelSize:                  *channelSize,
 		Gratuitous:                   *gratuitous,
 		QueryTime:                    *selfQuery,
-		Loopback:                     *loopback,
 		HackPayloadFilename:          *filename,
 		DebugLevel:                   *dl,
+		Testing:                      *testing,
 	}
 
 	r := goIGMP.NewIGMPReporter(*conf)

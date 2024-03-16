@@ -8,6 +8,12 @@ import (
 
 func (r IGMPReporter) proxy(interf side, dest destIP, buf *[]byte) {
 
+	startTime := time.Now()
+	defer func() {
+		r.pH.WithLabelValues("proxy", "start", "complete").Observe(time.Since(startTime).Seconds())
+	}()
+	r.pC.WithLabelValues("proxy", "start", "count").Inc()
+
 	debugLog(r.debugLevel > 100, fmt.Sprintf("proxy:%s dest:%s", interf, r.mapIPtoNetAddr[dest]))
 
 	iph := r.ipv4Header(len(*buf), dest)

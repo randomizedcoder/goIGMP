@@ -19,6 +19,12 @@ func (r IGMPReporter) selfQuery(interf side) {
 		igmpQueryMaxResponseTimeCst = 10 * time.Second
 	)
 
+	startTime := time.Now()
+	defer func() {
+		r.pH.WithLabelValues("selfQuery", "start", "complete").Observe(time.Since(startTime).Seconds())
+	}()
+	r.pC.WithLabelValues("selfQuery", "start", "count").Inc()
+
 	debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery(%s) - don't do this at home folks", interf))
 
 	if r.TimerDuration[QUERY] < minQueryDurationCst {
@@ -56,6 +62,9 @@ func (r IGMPReporter) selfQuery(interf side) {
 
 	for loops := 0; ; loops++ {
 
+		loopStartTime := time.Now()
+		r.pC.WithLabelValues("selfQuery", "loops", "count").Inc()
+
 		debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery(%s) loops:%d", interf, loops))
 
 		<-t.C
@@ -72,5 +81,6 @@ func (r IGMPReporter) selfQuery(interf side) {
 		}
 
 		debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery(%s) - WriteTo success, len(igmpPayload):%d", interf, len(igmpPayload)))
+		r.pH.WithLabelValues("selfQuery", "loopStartTime", "complete").Observe(time.Since(loopStartTime).Seconds())
 	}
 }

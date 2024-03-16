@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"sync"
+	"time"
 )
 
 type membershipItem struct {
@@ -20,14 +21,36 @@ func (r IGMPReporter) readMembershipReportToNetworkCh(wg *sync.WaitGroup) {
 
 	for loops := 0; ; loops++ {
 
+		startTime := time.Now()
+		r.pC.WithLabelValues("readMembershipReportToNetworkCh", "loops", "count").Inc()
+
 		groups := <-r.MembershipReportToNetworkCh
 
 		debugLog(r.debugLevel > 10, fmt.Sprintf("readMembershipReportToNetworkCh() loops:%d groups:%v", loops, groups))
 
 		r.sendMembershipReport(OUT, groups)
 
+		r.pH.WithLabelValues("readMembershipReportToNetworkCh", "loop", "complete").Observe(time.Since(startTime).Seconds())
 	}
+}
 
+func (r IGMPReporter) testingReadMembershipReportsFromNetwork(wg *sync.WaitGroup) {
+
+	defer wg.Done()
+
+	debugLog(r.debugLevel > 10, "testingReadMembershipReportsFromNetwork()")
+
+	for loops := 0; ; loops++ {
+
+		startTime := time.Now()
+		r.pC.WithLabelValues("testingReadMembershipReportsFromNetwork", "loops", "count").Inc()
+
+		groups := <-r.MembershipReportFromNetworkCh
+
+		debugLog(r.debugLevel > 10, fmt.Sprintf("testingReadMembershipReportsFromNetwork() loops:%d groups:%v", loops, groups))
+
+		r.pH.WithLabelValues("testingReadMembershipReportsFromNetwork", "loop", "complete").Observe(time.Since(startTime).Seconds())
+	}
 }
 
 // connectQueryToReport is for testing
@@ -42,11 +65,16 @@ func (r IGMPReporter) connectQueryToReport(wg *sync.WaitGroup) {
 
 	for loops := 0; ; loops++ {
 
+		startTime := time.Now()
+		r.pC.WithLabelValues("connectQueryToReport", "loops", "count").Inc()
+
 		<-r.QueryNotifyCh
 
 		debugLog(r.debugLevel > 10, fmt.Sprintf("connectQueryToReport() loops:%d <-r.QueryNotifyCh, calling r.sendMembershipReport(OUT, mi)", loops))
 
 		r.sendMembershipReport(OUT, mi)
+
+		r.pH.WithLabelValues("connectQueryToReport", "loop", "complete").Observe(time.Since(startTime).Seconds())
 
 	}
 

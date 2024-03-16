@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/gopacket/layers"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/net/ipv4"
 )
 
@@ -39,13 +41,17 @@ const (
 	allHostsQuad  = "224.0.0.1"
 	IGMPHostsQuad = "224.0.0.22"
 
-	allZerosHosts destIP = 0  // 0.0.0.0
-	allHosts      destIP = 1  // 224.0.0.1
-	IGMPHosts     destIP = 22 // 224.0.0.22
+	allZerosHosts destIP = 0   // 0.0.0.0
+	allHosts      destIP = 1   // 224.0.0.1
+	IGMPHosts     destIP = 22  // 224.0.0.22
+	QueryHost     destIP = 666 // In this case we use the query source IP
 	// https://en.wikipedia.org/wiki/Multicast_address
 
 	igmpTypeQuery            igmpType = 1
 	igmpTypeMembershipReport igmpType = 2
+
+	quantileError    = 0.05
+	summaryVecMaxAge = 5 * time.Minute
 )
 
 type side int
@@ -69,6 +75,7 @@ func (s side) String() string {
 type Config struct {
 	InIntName                    string
 	OutIntName                   string
+	UnicastDst                   string
 	ProxyOutToIn                 bool
 	ProxyInToOut                 bool
 	UnicastProxyInToOut          bool
@@ -76,27 +83,35 @@ type Config struct {
 	MembershipReportsFromNetwork bool
 	MembershipReportsToNetwork   bool
 	UnicastMembershipReports     bool
-	ConnectQueryToReport         bool
 	ChannelSize                  int
 	Gratuitous                   time.Duration
 	QueryTime                    time.Duration
-	Loopback                     bool
 	HackPayloadFilename          string
 	DebugLevel                   int
+	Testing                      TestingOptions
+}
+
+type TestingOptions struct {
+	MulticastLoopback       bool
+	ConnectQueryToReport    bool
+	MembershipReportsReader bool
 }
 
 func (c Config) String() string {
 	return "Config " +
-		fmt.Sprintf("InIntName:%s,", c.InIntName) +
-		fmt.Sprintf("OutIntName:%s,", c.OutIntName) +
-		fmt.Sprintf("ProxyOutToIn:%t,", c.ProxyOutToIn) +
-		fmt.Sprintf("ProxyInToOut:%t,", c.ProxyInToOut) +
-		fmt.Sprintf("UnicastProxyInToOut:%t,", c.UnicastProxyInToOut) +
-		fmt.Sprintf("QueryNotify:%t,", c.QueryNotify) +
-		fmt.Sprintf("MembershipReportsFromNetwork:%t,", c.MembershipReportsFromNetwork) +
-		fmt.Sprintf("MembershipReportsToNetwork:%t,", c.MembershipReportsToNetwork) +
-		fmt.Sprintf("UnicastMembershipReports:%t,", c.UnicastMembershipReports) +
-		fmt.Sprintf("ConnectQueryToReport:%t,", c.ConnectQueryToReport) +
+		fmt.Sprintf("InIntName:%s, ", c.InIntName) +
+		fmt.Sprintf("OutIntName:%s, ", c.OutIntName) +
+		fmt.Sprintf("UnicastDst:%s, ", c.UnicastDst) +
+		fmt.Sprintf("ProxyOutToIn:%t, ", c.ProxyOutToIn) +
+		fmt.Sprintf("ProxyInToOut:%t, ", c.ProxyInToOut) +
+		fmt.Sprintf("UnicastProxyInToOut:%t, ", c.UnicastProxyInToOut) +
+		fmt.Sprintf("QueryNotify:%t, ", c.QueryNotify) +
+		fmt.Sprintf("MembershipReportsFromNetwork:%t, ", c.MembershipReportsFromNetwork) +
+		fmt.Sprintf("MembershipReportsToNetwork:%t, ", c.MembershipReportsToNetwork) +
+		fmt.Sprintf("UnicastMembershipReports:%t, ", c.UnicastMembershipReports) +
+		fmt.Sprintf("Testing.MulticastLoopback:%t, ", c.Testing.MulticastLoopback) +
+		fmt.Sprintf("Testing.ConnectQueryToReport:%t, ", c.Testing.ConnectQueryToReport) +
+		fmt.Sprintf("Testing.MembershipReportsReader:%t, ", c.Testing.MembershipReportsReader) +
 		fmt.Sprintf("ChannelSize:%d,", c.ChannelSize)
 }
 
@@ -115,8 +130,7 @@ type IGMPReporter struct {
 	NetAddr    map[side]netip.Addr
 
 	multicastGroups []destIP
-	// reading
-	uCon map[side]net.PacketConn
+	uCon            map[side]net.PacketConn
 	// Each multicast socket has anyCon listening on 0.0.0.0,
 	// and mConIGMP has the join for the particular group 224.0.0.1 or 224.0.0.22
 	anyCon   map[side]map[netip.Addr]net.PacketConn
@@ -141,6 +155,14 @@ type IGMPReporter struct {
 	mapIPtoIGMPType     map[destIP]map[layers.IGMPType]igmpType
 	mapUnicastIGMPTypes map[layers.IGMPType]bool
 
+	querierSourceIP netip.Addr
+	unicastDst      netip.Addr
+
+	pC         *prometheus.CounterVec
+	pH         *prometheus.SummaryVec
+	pCrecvIGMP *prometheus.CounterVec
+	pHrecvIGMP *prometheus.SummaryVec
+
 	debugLevel int
 }
 
@@ -156,6 +178,54 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	if r.debugLevel > 10 {
 		debugLog(r.debugLevel > 10, fmt.Sprintf("NewIGMPReporter() r.conf:%s", r.conf))
 	}
+
+	r.pC = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: "counters",
+			Name:      "goIGMP",
+			Help:      "goIGMP counters",
+		},
+		[]string{"function", "variable", "type"},
+	)
+	r.pH = promauto.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Subsystem: "histrograms",
+			Name:      "goIGMP",
+			Help:      "goIGMP historgrams",
+			Objectives: map[float64]float64{
+				0.1:  quantileError,
+				0.5:  quantileError,
+				0.9:  quantileError,
+				0.99: quantileError,
+			},
+			MaxAge: summaryVecMaxAge,
+		},
+		[]string{"function", "variable", "type"},
+	)
+
+	r.pCrecvIGMP = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: "counters",
+			Name:      "recvIGMP",
+			Help:      "recvIGMP counters",
+		},
+		[]string{"function", "interface", "group", "type"},
+	)
+	r.pHrecvIGMP = promauto.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Subsystem: "histrograms",
+			Name:      "recvIGMP",
+			Help:      "recvIGMP historgrams",
+			Objectives: map[float64]float64{
+				0.1:  quantileError,
+				0.5:  quantileError,
+				0.9:  quantileError,
+				0.99: quantileError,
+			},
+			MaxAge: summaryVecMaxAge,
+		},
+		[]string{"function", "interface", "group", "type"},
+	)
 
 	r.IntName = make(map[side]string)
 	r.IntName[IN] = r.conf.InIntName
@@ -173,6 +243,8 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("NewIGMPReporter() IntOutName Key: %v, Value: %v", key, val))
 		}
 	}
+
+	r.unicastDst = netip.MustParseAddr(r.conf.UnicastDst)
 
 	r.TimerDuration = make(map[ttlType]time.Duration)
 	r.TimerDuration[GRATUITOUS] = conf.Gratuitous
@@ -227,6 +299,10 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 
 		r.uCon[IN] = r.openUnicastPacketConn(IN)
 
+		if r.conRaw[OUT] == nil {
+			r.conRaw[OUT] = r.openRawConnection(OUT)
+		}
+
 		r.mapUnicastIGMPTypes = make(map[layers.IGMPType]bool)
 		r.mapUnicastIGMPTypes[layers.IGMPMembershipReportV3] = true
 		r.mapUnicastIGMPTypes[layers.IGMPMembershipReportV2] = true
@@ -277,11 +353,14 @@ func (r IGMPReporter) Run() {
 
 	debugLog(r.debugLevel > 10, "IGMPReporter.Run()")
 
+	var added int
+
 	if r.conf.ProxyOutToIn || r.conf.QueryNotify || r.conf.MembershipReportsFromNetwork {
 		for _, g := range r.multicastGroups {
 			wg.Add(1)
 			go r.recvIGMP(&wg, OUT, g)
 			debugLog(r.debugLevel > 10, fmt.Sprintf("IGMPReporter.Run() recvIGMP OUT started, g:%s", r.mapIPtoNetAddr[g]))
+			added++
 		}
 	}
 
@@ -290,6 +369,7 @@ func (r IGMPReporter) Run() {
 			wg.Add(1)
 			go r.recvIGMP(&wg, IN, g)
 			debugLog(r.debugLevel > 10, fmt.Sprintf("IGMPReporter.Run() recvIGMP IN started, g:%s", r.mapIPtoNetAddr[g]))
+			added++
 		}
 	}
 
@@ -297,19 +377,37 @@ func (r IGMPReporter) Run() {
 		wg.Add(1)
 		go r.recvUnicastIGMP(&wg, IN)
 		debugLog(r.debugLevel > 10, "IGMPReporter.Run() UnicastProxyInToOut started")
+		added++
 	}
 
 	if r.conf.MembershipReportsToNetwork {
 		wg.Add(1)
 		go r.readMembershipReportToNetworkCh(&wg)
+		debugLog(r.debugLevel > 10, "IGMPReporter.Run() readMembershipReportToNetworkCh started")
+		added++
 	}
 
-	if r.conf.ConnectQueryToReport {
+	if r.conf.Testing.ConnectQueryToReport {
 		wg.Add(1)
 		go r.connectQueryToReport(&wg)
+		debugLog(r.debugLevel > 10, "IGMPReporter.Run() connectQueryToReport started")
+		added++
+	}
+
+	if r.conf.Testing.MembershipReportsReader {
+		wg.Add(1)
+		go r.testingReadMembershipReportsFromNetwork(&wg)
+		debugLog(r.debugLevel > 10, "IGMPReporter.Run() testingReadMembershipReportsFromNetwork started")
+		added++
 	}
 
 	wg.Wait()
+
+	if added == 0 {
+		debugLog(r.debugLevel > 10, "IGMPReporter.Run() added == 0.  Recommend enabling some features")
+	} else {
+		debugLog(r.debugLevel > 10, fmt.Sprintf("IGMPReporter.Run() complete (added:%d)", added))
+	}
 
 }
 

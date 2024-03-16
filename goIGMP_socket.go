@@ -149,14 +149,17 @@ func (r IGMPReporter) openRawConnection(interf side) (raw *ipv4.RawConn) {
 		log.Fatal(err)
 	}
 
-	if r.conf.Loopback {
+	if err := raw.SetMulticastTTL(igmpTTLCst); err != nil {
+		log.Fatal("openRawConnection() SetMulticastTTL err:", err)
+	}
+	debugLog(r.debugLevel > 10, fmt.Sprintf("openRawConnection(%s) SetMulticastInterface and SetMulticastTTL set", interf))
+
+	if r.conf.Testing.MulticastLoopback {
 		if err := raw.SetMulticastLoopback(true); err != nil {
 			log.Fatal("openRawConnection() SetMulticastLoopback err:", err)
 		}
-	}
+		debugLog(r.debugLevel > 10, fmt.Sprintf("openRawConnection(%s) SetMulticastLoopback set", interf))
 
-	if err := raw.SetMulticastTTL(igmpTTLCst); err != nil {
-		log.Fatal("openRawConnection() SetMulticastTTL err:", err)
 	}
 
 	return raw

@@ -106,22 +106,23 @@ type TestingOptions struct {
 }
 
 func (c Config) String() string {
-	return "Config " +
-		fmt.Sprintf("InIntName:%s, ", c.InIntName) +
-		fmt.Sprintf("OutIntName:%s, ", c.OutIntName) +
-		fmt.Sprintf("AltOutIntName:%s, ", c.AltOutIntName) +
-		fmt.Sprintf("UnicastDst:%s, ", c.UnicastDst) +
-		fmt.Sprintf("ProxyOutToIn:%t, ", c.ProxyOutToIn) +
-		fmt.Sprintf("ProxyInToOut:%t, ", c.ProxyInToOut) +
-		fmt.Sprintf("UnicastProxyInToOut:%t, ", c.UnicastProxyInToOut) +
-		fmt.Sprintf("QueryNotify:%t, ", c.QueryNotify) +
-		fmt.Sprintf("MembershipReportsFromNetwork:%t, ", c.MembershipReportsFromNetwork) +
-		fmt.Sprintf("MembershipReportsToNetwork:%t, ", c.MembershipReportsToNetwork) +
-		fmt.Sprintf("UnicastMembershipReports:%t, ", c.UnicastMembershipReports) +
-		fmt.Sprintf("Testing.MulticastLoopback:%t, ", c.Testing.MulticastLoopback) +
-		fmt.Sprintf("Testing.ConnectQueryToReport:%t, ", c.Testing.ConnectQueryToReport) +
-		fmt.Sprintf("Testing.MembershipReportsReader:%t, ", c.Testing.MembershipReportsReader) +
-		fmt.Sprintf("ChannelSize:%d,", c.ChannelSize)
+	return "IGMPReporter Config " + "\n" +
+		fmt.Sprintf("InIntName:%s, ", c.InIntName) + "\n" +
+		fmt.Sprintf("OutIntName:%s, ", c.OutIntName) + "\n" +
+		fmt.Sprintf("AltOutIntName:%s, ", c.AltOutIntName) + "\n" +
+		fmt.Sprintf("UnicastDst:%s, ", c.UnicastDst) + "\n" +
+		fmt.Sprintf("ProxyOutToIn:%t, ", c.ProxyOutToIn) + "\n" +
+		fmt.Sprintf("ProxyInToOut:%t, ", c.ProxyInToOut) + "\n" +
+		fmt.Sprintf("UnicastProxyInToOut:%t, ", c.UnicastProxyInToOut) + "\n" +
+		fmt.Sprintf("QueryNotify:%t, ", c.QueryNotify) + "\n" +
+		fmt.Sprintf("MembershipReportsFromNetwork:%t, ", c.MembershipReportsFromNetwork) + "\n" +
+		fmt.Sprintf("MembershipReportsToNetwork:%t, ", c.MembershipReportsToNetwork) + "\n" +
+		fmt.Sprintf("UnicastMembershipReports:%t, ", c.UnicastMembershipReports) + "\n" +
+		fmt.Sprintf("Testing.MulticastLoopback:%t, ", c.Testing.MulticastLoopback) + "\n" +
+		fmt.Sprintf("Testing.ConnectQueryToReport:%t, ", c.Testing.ConnectQueryToReport) + "\n" +
+		fmt.Sprintf("Testing.MembershipReportsReader:%t, ", c.Testing.MembershipReportsReader) + "\n" +
+		fmt.Sprintf("ChannelSize:%d,", c.ChannelSize) + "\n" +
+		fmt.Sprintf("HackPayloadFilename:%s, ", c.HackPayloadFilename)
 }
 
 type IGMPReporter struct {
@@ -301,6 +302,8 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 
 	if len(r.conf.HackPayloadFilename) > 0 {
 		r.membershipReportPayloadHack = r.hackReadIGMPMemershipReportPayload(r.conf.HackPayloadFilename)
+	} else {
+		debugLog(r.debugLevel > 10, "NewIGMPReporter() no payload")
 	}
 
 	r.QueryNotifyCh = make(chan struct{}, r.conf.ChannelSize)

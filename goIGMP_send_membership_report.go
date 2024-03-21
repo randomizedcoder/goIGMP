@@ -12,22 +12,23 @@ import (
 // the payload was extracted from pcap
 // this needs to be replaced by correct serializtion in the gopacket library
 func (r IGMPReporter) hackReadIGMPMemershipReportPayload(filename string) (payload []byte) {
-	const ()
+
+	debugLog(r.debugLevel > 10, fmt.Sprintf("hackReadIGMPMemershipReportPayload(%s)", filename))
 
 	var err error
 	payload, err = os.ReadFile(filename)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("hackReadIGMPMemershipReportPayload os.ReadFile err:", err)
 	}
 
-	if r.debugLevel > 10 {
+	if r.debugLevel > 100 {
 		// https://pkg.go.dev/encoding/hex#Encode
 
 		dst := make([]byte, hex.EncodedLen(len(payload)))
 		n := hex.Encode(dst, payload)
 
-		log.Printf("hackReadIGMPMemershipReportPayload() n:%d", n)
-		log.Printf("hackReadIGMPMemershipReportPayload() hex:%s", dst)
+		debugLog(r.debugLevel > 10, fmt.Sprintf("hackReadIGMPMemershipReportPayload() n:%d", n))
+		debugLog(r.debugLevel > 10, fmt.Sprintf("hackReadIGMPMemershipReportPayload() hex:%s", dst))
 	}
 
 	return payload

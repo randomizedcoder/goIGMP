@@ -299,7 +299,9 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 
 	r.ContMsg = make(map[side]*ipv4.ControlMessage)
 
-	r.membershipReportPayloadHack = r.hackReadIGMPMemershipReportPayload(r.conf.HackPayloadFilename)
+	if len(r.conf.HackPayloadFilename) > 0 {
+		r.membershipReportPayloadHack = r.hackReadIGMPMemershipReportPayload(r.conf.HackPayloadFilename)
+	}
 
 	r.QueryNotifyCh = make(chan struct{}, r.conf.ChannelSize)
 	r.MembershipReportFromNetworkCh = make(chan []membershipItem, r.conf.ChannelSize)

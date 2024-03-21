@@ -52,9 +52,15 @@ mount:
 proxyTest:
 	./${BINARY} \
 		-outName enp1s0 \
+		-altName gre0 \
 		-inName br-siden \
 		-proxyOutIn \
 		-unicastProxyInToOut
+#ip link add gre0 type gre
+
+makeGREint:
+	ip link add gre0 type gre
+	ip addr add 10.0.0.1/32 dev gre0
 
 uniTest:
 	./${BINARY} \

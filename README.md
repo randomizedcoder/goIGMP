@@ -1,9 +1,111 @@
 # goIGMP
 go IGMP toys
 
+This is a little go library to allow handling of IGMP messages for different scenarios.
+
+It was mostly designed to allow proxing IGMP messages into a docker bridge network
+to containers.  There is a special unicast response mode which allows crafting
+specific IGMP responses in the case you do not want to jsut let the kernel respond.  Essentailly, this allows you to control which IGMP responses come out of the docker network.
+
+## Interfaces "outside" and "inside"
+
+The interface names are named outside and inside a little like an old Cisco PIX.
+
+Potentially "upstream" and "downstream" would have been better names.
+
+When there are x2 outside interfaces, the second interface is named "alternative" or "alt".
+
+## Proxy from outside to inside
+
+```bash
+   ProxyOutToIn                true
+   ProxyInToOut                false
+   UnicastProxyInToOut         true
+   QueryNotify                 false
+   MembershipReportFromNetwork false
+   MembershipReportToNetworkCh false
+   UnicastMembershipResponse   false
+```
+
+<img src="./diagrams/proxy_mode_special.png" alt="proxy_mode_special" width="80%" height="80%"/>
+
+## Two (2) outside interfaces
+
+Allow for x2 outside interfaces, with a channel to allow an application to signal which outside interface to use.
+
+```bash
+   ProxyOutToIn                true
+   ProxyInToOut                false
+   UnicastProxyInToOut         true
+   QueryNotify                 false
+   MembershipReportFromNetwork false
+   MembershipReportToNetworkCh false
+   UnicastMembershipResponse   false
+```
+<img src="./diagrams/proxy_mode_special_two_outside.png" alt="proxy_mode_special_two_outside" width="80%" height="80%"/>
+
+Full Proxy Mode
+
+```bash
+   outName                     enp1s0
+   altName                     gre0
+   inName                      dockerbr
+   ProxyOutToIn                true
+   ProxyInToOut                true
+   UnicastProxyInToOut         true
+   QueryNotify                 false
+   MembershipReportFromNetwork false
+   MembershipReportToNetworkCh false
+   UnicastMembershipResponse   false
+```
+
+<img src="./diagrams/proxy_full.png" alt="proxy_full" width="80%" height="80%"/>
+
+Client mode
+
+Client mode setups up channels
+- QueryNotifyCh struct{}
+- MembershipReportToNetworkCh []membershipItem
+- MembershipReportFromNetworkCh []membershipItem
+
+
+```bash
+type membershipItem struct {
+   Source       netip.Addr
+   Group        netip.Addr
+}
+```
+
+
+```bash
+   outName                     enp1s0
+   inName                      dockerbr
+   ProxyOutToIn                false
+   ProxyInToOut                false
+   UnicastProxyInToOut         false
+   QueryNotify                 true
+   MembershipReportFromNetwork true
+   MembershipReportToNetworkCh true
+   UnicastMembershipResponse   true
+```
+
+<img src="./diagrams/igmp_client_mode.png" alt="igmp_client_mode" width="80%" height="80%"/>
+
+This is an example of using the proxy from outside to inside, and then having
+a special application controlling the IGMP responses that leave the docker network.
+
+<img src="./diagrams/deployment_scenario_example.png" alt="deployment_scenario_example" width="80%" height="80%"/>
+
+
 Code to:
 - send IGMP membership reports
 - recieve IGMP membership queries
+
+## IGMP version support
+
+The code essenially just copies the entire payload, but was tested against IGMPv3.
+
+IGMPv2 sends the join on the multicast group in question, so this code doesn't really do that.  It could be extended to support this easily enough I suppose.
 
 ## IGMPv3
 

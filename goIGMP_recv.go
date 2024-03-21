@@ -1,10 +1,10 @@
 package goIGMP
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
-	"net/netip"
 	"sync"
 	"time"
 
@@ -21,20 +21,29 @@ var (
 	}
 )
 
-func (r IGMPReporter) recvIGMP(wg *sync.WaitGroup, interf side, g destIP) {
+func (r IGMPReporter) recvIGMP(wg *sync.WaitGroup, ctx context.Context, interf side, g destIP) {
 
 	defer wg.Done()
 
 	debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s started", interf, r.mapIPtoNetAddr[g]))
 
+forLoop:
 	for loops := 0; ; loops++ {
+
+		select {
+		case <-ctx.Done():
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ctx.Done()", interf, r.mapIPtoNetAddr[g], loops))
+			break forLoop
+		default:
+			debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ctx is not cancelled", interf, r.mapIPtoNetAddr[g], loops))
+		}
 
 		loopStartTime := time.Now()
 		r.pCrecvIGMP.WithLabelValues("loop", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
 
-		debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d", interf, r.mapIPtoNetAddr[g], loops))
+		debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d", interf, r.mapIPtoNetAddr[g], loops))
 
-		err := r.mConIGMP[interf][r.mapIPtoNetAddr[g]].SetReadDeadline(time.Now().Add(readDeadlineCst))
+		err := r.mConIGMP[interf][r.mapIPtoNetAddr[g]].SetReadDeadline(time.Now().Add(r.conf.SocketReadDeadLine))
 		if err != nil {
 			log.Fatal(fmt.Sprintf("recvIGMP(%s) g:%s loops:%d SetReadDeadline err:", interf, r.mapIPtoNetAddr[g], loops), err)
 		}
@@ -45,12 +54,25 @@ func (r IGMPReporter) recvIGMP(wg *sync.WaitGroup, interf side, g destIP) {
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 				debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s ReadFrom timeout", interf, r.mapIPtoNetAddr[g]))
 				r.pCrecvIGMP.WithLabelValues("timeout", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
+				bytePool.Put(buf)
 				continue
 			}
 			r.pCrecvIGMP.WithLabelValues("ReadFrom", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+			bytePool.Put(buf)
+			continue
 		}
 		packetStartTime := time.Now()
 		r.pCrecvIGMP.WithLabelValues("n", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Add(float64(n))
+
+		//------------------
+		// Ignore traffic on the non-active outside interface
+		if r.AltOutExists {
+			if r.ignoreOnNonActiveOutOrAltInterface(&interf) {
+				debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ignoring on non active outside interface", interf, r.mapIPtoNetAddr[g], loops))
+				bytePool.Put(buf)
+				continue
+			}
+		}
 
 		//------------------
 		// Validate incoming interface is correct
@@ -61,6 +83,7 @@ func (r IGMPReporter) recvIGMP(wg *sync.WaitGroup, interf side, g destIP) {
 			debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d r.NetIFIndex[%d]:%s != interf:%s. Packet not for our interface. Ignoring",
 				interf, r.mapIPtoNetAddr[g], loops, cm.IfIndex, r.NetIFIndex[cm.IfIndex], interf))
 			r.pCrecvIGMP.WithLabelValues("interf", interf.String(), r.mapIPtoNetAddr[g].String(), "ignore").Inc()
+			bytePool.Put(buf)
 			continue
 		}
 
@@ -83,6 +106,7 @@ func (r IGMPReporter) recvIGMP(wg *sync.WaitGroup, interf side, g destIP) {
 		if dstAddr != r.mapIPtoNetAddr[g] {
 			debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d Packet not for our multicast group. Ignoring", interf, r.mapIPtoNetAddr[g], loops))
 			r.pCrecvIGMP.WithLabelValues("dstAddr", interf.String(), r.mapIPtoNetAddr[g].String(), "ignore").Inc()
+			bytePool.Put(buf)
 			continue
 		}
 
@@ -97,6 +121,7 @@ func (r IGMPReporter) recvIGMP(wg *sync.WaitGroup, interf side, g destIP) {
 		if igmpLayer == nil {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d This isn't deserializing to IGMP.  Ignoring", interf, r.mapIPtoNetAddr[g], loops))
 			r.pCrecvIGMP.WithLabelValues("deserializing", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+			bytePool.Put(buf)
 			continue
 		}
 
@@ -108,6 +133,7 @@ func (r IGMPReporter) recvIGMP(wg *sync.WaitGroup, interf side, g destIP) {
 		if !ok {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d Packet is not of a valid IGMP type for this group. Ignoring", interf, r.mapIPtoNetAddr[g], loops))
 			r.pCrecvIGMP.WithLabelValues("igmpT", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+			bytePool.Put(buf)
 			continue
 		}
 
@@ -156,10 +182,17 @@ func (r IGMPReporter) recvIGMP(wg *sync.WaitGroup, interf side, g destIP) {
 		if r.proxyIt(interf) {
 			r.pCrecvIGMP.WithLabelValues("proxyIt", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
 			r.pCrecvIGMP.WithLabelValues("proxyIt", interf.String(), r.mapIPtoNetAddr[g].String(), "bytes").Add(float64(len(*buf)))
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d proxying to:%s", interf, r.mapIPtoNetAddr[g], loops, r.IntOutName[interf]))
 
-			// We actually just send buf completely
-			r.proxy(r.IntOutName[interf], g, buf)
+			out, ok := r.IntOutName.Load(interf)
+			if !ok {
+				debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) Load !ok", interf))
+				r.pC.WithLabelValues("recvIGMP", "Load", "error").Inc()
+				bytePool.Put(buf)
+				continue
+			}
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d proxying to:%s", interf, r.mapIPtoNetAddr[g], loops, out.(side)))
+
+			r.proxy(out.(side), g, buf)
 
 			bytePool.Put(buf)
 		}
@@ -184,6 +217,29 @@ func (r IGMPReporter) proxyIt(interf side) (proxyIt bool) {
 	return proxyIt
 }
 
+func (r IGMPReporter) ignoreOnNonActiveOutOrAltInterface(interf *side) (ignore bool) {
+	if r.OutsideInterfaces[*interf] {
+
+		out, ok := r.IntOutName.Load(IN)
+		if !ok {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("ignoreOnNonActiveOutOrAltInterface(%s) Load !ok", *interf))
+			r.pC.WithLabelValues("ignoreOnNonActiveOutOrAltInterface", "Load", "error").Inc()
+			ignore = true
+			return ignore
+		}
+
+		if *interf != out.(side) {
+			ignore = true
+			r.pC.WithLabelValues("ignoreOnNonActiveOutOrAltInterface", "ignore", "count").Inc()
+			debugLog(r.debugLevel > 100, fmt.Sprintf("ignoreOnNonActiveOutOrAltInterface(%s) ignoring non-active outside interface", *interf))
+		}
+	}
+
+	return ignore
+}
+
+// groupRecordsToMembershipItem converts the real IGMP packet group memberships
+// into the internal representatino as a list of []membershipItem
 func (r IGMPReporter) groupRecordsToMembershipItem(groupRecords []layers.IGMPv3GroupRecord) (mitems []membershipItem) {
 
 	startTime := time.Now()
@@ -216,89 +272,4 @@ func (r IGMPReporter) groupRecordsToMembershipItem(groupRecords []layers.IGMPv3G
 	debugLog(r.debugLevel > 10, fmt.Sprintf("groupRecordsToMembershipItem() len(mitems):%d", len(mitems)))
 
 	return mitems
-}
-
-func (r IGMPReporter) recvUnicastIGMP(wg *sync.WaitGroup, interf side) {
-	var (
-		//err     error
-		localIP netip.Addr
-		ok      bool
-	)
-
-	defer wg.Done()
-
-	if localIP, ok = r.NetAddr[interf]; !ok {
-		log.Fatalf("recvUnicastIGMP(%s) interface IP lookup error", interf)
-	}
-
-	debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s started", interf, localIP))
-
-	for loops := 0; ; loops++ {
-
-		loopStartTime := time.Now()
-		r.pC.WithLabelValues("recvUnicastIGMP", "loops", "counter").Inc()
-
-		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d", interf, localIP, loops))
-
-		err := r.uCon[IN].SetReadDeadline(time.Now().Add(readDeadlineCst))
-		if err != nil {
-			log.Fatal(fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s  loops:%d SetReadDeadline err:", interf, localIP, loops), err)
-		}
-
-		buf := bytePool.Get().(*[]byte)
-		n, addr, err := r.uCon[IN].ReadFrom(*buf)
-		if err != nil {
-			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
-				debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s ReadFrom timeout", interf, localIP))
-				r.pC.WithLabelValues("recvUnicastIGMP", "timeout", "counter").Inc()
-				continue
-			}
-		}
-		packetStartTime := time.Now()
-
-		debugLog(r.debugLevel > 100, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d n:%d, addr:%s", interf, localIP, loops, n, addr))
-		r.pC.WithLabelValues("recvUnicastIGMP", "n", "counter").Add(float64(n))
-
-		//------------------
-		// Validate this is IGMP and it's the correct type of IGMP
-
-		// https://pkg.go.dev/github.com/tsg/gopacket#hdr-Basic_Usage
-		// https://github.com/google/gopacket/blob/master/layers/igmp.go#L224
-		packet := gopacket.NewPacket(*buf, layers.LayerTypeIGMP, gopacket.Default)
-
-		igmpLayer := packet.Layer(layers.LayerTypeIGMP)
-		if igmpLayer == nil {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d This isn't deserializing to IGMP.  Ignoring", interf, localIP, loops))
-			r.pC.WithLabelValues("recvUnicastIGMP", "deserializing", "error").Inc()
-			continue
-		}
-
-		igmp, _ := igmpLayer.(*layers.IGMP)
-
-		_, ok := r.mapUnicastIGMPTypes[igmp.Type]
-		if !ok {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d Packet is not of a valid IGMP type for this interface. Ingnoring", interf, localIP, loops))
-			r.pC.WithLabelValues("recvUnicastIGMP", "igmpType", "error").Inc()
-			continue
-		}
-
-		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d n:%d, addr:%s proxying to:%s", interf, localIP, loops, n, addr, r.IntOutName[IN]))
-
-		var dest destIP
-		if r.conf.UnicastMembershipReports {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d UnicastMembershipReports dest = QueryHost", interf, localIP, loops))
-			dest = QueryHost
-		} else {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d dest = IGMPHosts", interf, localIP, loops))
-			dest = IGMPHosts
-		}
-		// We actually just send buf completely
-		r.proxy(r.IntOutName[interf], dest, buf)
-
-		bytePool.Put(buf)
-
-		r.pH.WithLabelValues("recvUnicastIGMP", "sincePacketStartTime", "counter").Observe(time.Since(packetStartTime).Seconds())
-		r.pH.WithLabelValues("recvUnicastIGMP", "sinceLoopStartTime", "counter").Observe(time.Since(loopStartTime).Seconds())
-
-	}
 }

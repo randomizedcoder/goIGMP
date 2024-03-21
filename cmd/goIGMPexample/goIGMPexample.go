@@ -28,6 +28,7 @@ const (
 
 	inNameCst     = "lo"
 	outNameCst    = "eth0"
+	altNameCst    = ""
 	unicastDstCst = "10.99.0.1"
 
 	ProxyOutToInCst                 = true
@@ -43,10 +44,14 @@ const (
 
 	channelSizeCst = 10
 
+	readDeadlineCst = 10 * time.Second // IGMP queries come in infrequently
+
 	//joinTTLCst    = 60 * time.Second
 	gratuitousCst = 600 * time.Second // These should be longer!!
 	selfQueryCst  = 5 * time.Second
 	loopbackCst   = false
+
+	cancelSleepTime = 5 * time.Second
 )
 
 var (
@@ -59,7 +64,7 @@ var (
 
 func main() {
 
-	_, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	go initSignalHandler(cancel)
@@ -74,6 +79,7 @@ func main() {
 
 	inName := flag.String("inName", inNameCst, "inside interface to listen & send on")
 	outName := flag.String("outName", outNameCst, "outside interface to listen & send on")
+	altName := flag.String("altName", altNameCst, "alternative outside interface to listen & send on. leave blank for none")
 
 	unicastDst := flag.String("unicastDst", unicastDstCst, "Fallback unicast destination for the unicast membership reports")
 
@@ -98,6 +104,8 @@ func main() {
 	filename := flag.String("filename", hackFilenameCst, "filename of file with igmp membership payload")
 
 	channelSize := flag.Int("channelSize", channelSizeCst, "channel size")
+
+	readDeadline := flag.Duration("readDeadline", readDeadlineCst, "readDeadline sets the socket read deadline.  This impacts how quickly an IGMPReporter will detect context.Cancel and shutdown")
 
 	gratuitous := flag.Duration("gratuitous", gratuitousCst, "gratuitous duration to send gratuitous reports")
 
@@ -125,6 +133,7 @@ func main() {
 	conf := &goIGMP.Config{
 		InIntName:                    *inName,
 		OutIntName:                   *outName,
+		AltOutIntName:                *altName,
 		UnicastDst:                   *unicastDst,
 		ProxyOutToIn:                 *proxyOutIn,
 		ProxyInToOut:                 *proxyInOut,
@@ -133,6 +142,7 @@ func main() {
 		MembershipReportsFromNetwork: *membershipReportsFromNetwork,
 		MembershipReportsToNetwork:   *membershipReportsToNetwork,
 		UnicastMembershipReports:     *unicastMembershipReports,
+		SocketReadDeadLine:           *readDeadline,
 		ChannelSize:                  *channelSize,
 		Gratuitous:                   *gratuitous,
 		QueryTime:                    *selfQuery,
@@ -145,7 +155,7 @@ func main() {
 
 	log.Println("goIGMPExample.go r created")
 
-	r.Run()
+	r.Run(ctx)
 }
 
 // initSignalHandler sets up signal handling for the process, and
@@ -157,6 +167,12 @@ func initSignalHandler(cancel context.CancelFunc) {
 	<-c
 	log.Printf("Signal caught, closing application")
 	cancel()
+
+	log.Printf("Signal caught, sleeping to allow goroutines to close")
+	time.Sleep(cancelSleepTime)
+
+	log.Printf("Sleep complete, goodbye! exit(0)")
+
 	os.Exit(0)
 }
 

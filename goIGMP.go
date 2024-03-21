@@ -1,6 +1,7 @@
 package goIGMP
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -17,7 +18,6 @@ import (
 
 const (
 	writeDeadlineCst = 5 * time.Second // writes should be fast
-	readDeadlineCst  = 2 * time.Minute // IGMP queries come in slowly
 
 	igmpTTLCst = 1
 
@@ -25,10 +25,14 @@ const (
 
 	// IN  = "inside"
 	// OUT = "outside"
-	OUT    side = 1
-	IN     side = 2
-	OUTSTR      = "outside"
-	INSTR       = "inside"
+	OUT       side = 1
+	IN        side = 2
+	ALTOUT    side = 3
+	OUTSTR         = "outside"
+	ALTOUTSTR      = "altOutside"
+	INSTR          = "inside"
+
+	OutOrAltKey int = 1
 
 	// localMembership  membershipType = 1
 	// remoteMembership membershipType = 2
@@ -65,6 +69,8 @@ func (s side) String() string {
 		return OUTSTR
 	case IN:
 		return INSTR
+	case ALTOUT:
+		return ALTOUTSTR
 	default:
 		return ""
 	}
@@ -75,6 +81,7 @@ func (s side) String() string {
 type Config struct {
 	InIntName                    string
 	OutIntName                   string
+	AltOutIntName                string
 	UnicastDst                   string
 	ProxyOutToIn                 bool
 	ProxyInToOut                 bool
@@ -83,6 +90,7 @@ type Config struct {
 	MembershipReportsFromNetwork bool
 	MembershipReportsToNetwork   bool
 	UnicastMembershipReports     bool
+	SocketReadDeadLine           time.Duration
 	ChannelSize                  int
 	Gratuitous                   time.Duration
 	QueryTime                    time.Duration
@@ -101,6 +109,7 @@ func (c Config) String() string {
 	return "Config " +
 		fmt.Sprintf("InIntName:%s, ", c.InIntName) +
 		fmt.Sprintf("OutIntName:%s, ", c.OutIntName) +
+		fmt.Sprintf("AltOutIntName:%s, ", c.AltOutIntName) +
 		fmt.Sprintf("UnicastDst:%s, ", c.UnicastDst) +
 		fmt.Sprintf("ProxyOutToIn:%t, ", c.ProxyOutToIn) +
 		fmt.Sprintf("ProxyInToOut:%t, ", c.ProxyInToOut) +
@@ -119,8 +128,11 @@ type IGMPReporter struct {
 	conf Config
 
 	IntName    map[side]string
-	IntOutName map[side]side
+	IntOutName *sync.Map
 	Interfaces []side
+
+	AltOutExists      bool
+	OutsideInterfaces map[side]bool
 
 	TimerDuration map[ttlType]time.Duration
 
@@ -145,6 +157,7 @@ type IGMPReporter struct {
 	QueryNotifyCh                 chan struct{}
 	MembershipReportFromNetworkCh chan []membershipItem
 	MembershipReportToNetworkCh   chan []membershipItem
+	OutInterfaceSelectorCh        chan side
 
 	//membership map[membershipType]*btree.BTreeG[membershipItem]
 
@@ -162,6 +175,9 @@ type IGMPReporter struct {
 	pH         *prometheus.SummaryVec
 	pCrecvIGMP *prometheus.CounterVec
 	pHrecvIGMP *prometheus.SummaryVec
+	pG         prometheus.Gauge
+
+	WG *sync.WaitGroup
 
 	debugLevel int
 }
@@ -226,14 +242,34 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		},
 		[]string{"function", "interface", "group", "type"},
 	)
+	r.pG = promauto.NewGauge(prometheus.GaugeOpts{
+		Subsystem: "guage",
+		Name:      "outInterfaceSelector",
+		Help:      "outInterfaceSelector gauge",
+	})
 
 	r.IntName = make(map[side]string)
 	r.IntName[IN] = r.conf.InIntName
 	r.IntName[OUT] = r.conf.OutIntName
 	r.Interfaces = []side{IN, OUT}
-	r.IntOutName = make(map[side]side)
-	r.IntOutName[OUT] = IN
-	r.IntOutName[IN] = OUT
+
+	var m sync.Map
+	m.Store(OUT, IN)
+	m.Store(IN, OUT)
+	r.IntOutName = &m
+
+	if len(r.conf.AltOutIntName) > 0 {
+		r.AltOutExists = true
+
+		r.IntName[ALTOUT] = r.conf.AltOutIntName
+		r.Interfaces = append(r.Interfaces, ALTOUT)
+
+		r.OutInterfaceSelectorCh = make(chan side, r.conf.ChannelSize)
+
+		r.OutsideInterfaces = make(map[side]bool)
+		r.OutsideInterfaces[OUT] = true
+		r.OutsideInterfaces[ALTOUT] = true
+	}
 
 	if r.debugLevel > 10 {
 		for key, val := range r.IntName {
@@ -323,6 +359,11 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		if r.conRaw[IN] == nil {
 			r.conRaw[IN] = r.openRawConnection(IN)
 		}
+
+		if r.AltOutExists {
+			debugLog(r.debugLevel > 10, "NewIGMPReporter() ProxyOutToIn with alternative output")
+			r.createPacketConns(ALTOUT)
+		}
 	}
 
 	if r.conf.ProxyInToOut || r.conf.MembershipReportsToNetwork {
@@ -331,9 +372,18 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		r.createPacketConns(IN)
 
 		if r.conRaw[OUT] == nil {
+			debugLog(r.debugLevel > 10, "openRawConnection(OUT)")
 			r.conRaw[OUT] = r.openRawConnection(OUT)
 		}
+
+		if r.AltOutExists {
+			debugLog(r.debugLevel > 10, "openRawConnection(ALTOUT)")
+			r.createPacketConns(ALTOUT)
+		}
 	}
+
+	var wg sync.WaitGroup
+	r.WG = &wg
 
 	debugLog(r.debugLevel > 10, "NewIGMPReporter() setup complete")
 
@@ -346,10 +396,7 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	return r
 }
 
-func (r IGMPReporter) Run() {
-	var (
-		wg sync.WaitGroup
-	)
+func (r IGMPReporter) Run(ctx context.Context) {
 
 	debugLog(r.debugLevel > 10, "IGMPReporter.Run()")
 
@@ -357,51 +404,65 @@ func (r IGMPReporter) Run() {
 
 	if r.conf.ProxyOutToIn || r.conf.QueryNotify || r.conf.MembershipReportsFromNetwork {
 		for _, g := range r.multicastGroups {
-			wg.Add(1)
-			go r.recvIGMP(&wg, OUT, g)
+			r.WG.Add(1)
+			go r.recvIGMP(r.WG, ctx, OUT, g)
 			debugLog(r.debugLevel > 10, fmt.Sprintf("IGMPReporter.Run() recvIGMP OUT started, g:%s", r.mapIPtoNetAddr[g]))
+			added++
+		}
+
+		if r.AltOutExists {
+			for _, g := range r.multicastGroups {
+				r.WG.Add(1)
+				go r.recvIGMP(r.WG, ctx, ALTOUT, g)
+				debugLog(r.debugLevel > 10, fmt.Sprintf("IGMPReporter.Run() recvIGMP ALTOUT started, g:%s", r.mapIPtoNetAddr[g]))
+				added++
+			}
+
+			r.WG.Add(1)
+			go r.outInterfaceSelector(r.WG)
+			debugLog(r.debugLevel > 10, "IGMPReporter.Run() outInterfaceSelector started()")
 			added++
 		}
 	}
 
 	if r.conf.ProxyInToOut {
 		for _, g := range r.multicastGroups {
-			wg.Add(1)
-			go r.recvIGMP(&wg, IN, g)
+			r.WG.Add(1)
+			go r.recvIGMP(r.WG, ctx, IN, g)
 			debugLog(r.debugLevel > 10, fmt.Sprintf("IGMPReporter.Run() recvIGMP IN started, g:%s", r.mapIPtoNetAddr[g]))
 			added++
 		}
 	}
 
 	if r.conf.UnicastProxyInToOut {
-		wg.Add(1)
-		go r.recvUnicastIGMP(&wg, IN)
+		r.WG.Add(1)
+		go r.recvUnicastIGMP(r.WG, ctx, IN)
 		debugLog(r.debugLevel > 10, "IGMPReporter.Run() UnicastProxyInToOut started")
 		added++
 	}
 
 	if r.conf.MembershipReportsToNetwork {
-		wg.Add(1)
-		go r.readMembershipReportToNetworkCh(&wg)
+		r.WG.Add(1)
+		go r.readMembershipReportToNetworkCh(r.WG, ctx)
 		debugLog(r.debugLevel > 10, "IGMPReporter.Run() readMembershipReportToNetworkCh started")
 		added++
 	}
 
 	if r.conf.Testing.ConnectQueryToReport {
-		wg.Add(1)
-		go r.connectQueryToReport(&wg)
+		r.WG.Add(1)
+		go r.connectQueryToReport(r.WG, ctx)
 		debugLog(r.debugLevel > 10, "IGMPReporter.Run() connectQueryToReport started")
 		added++
 	}
 
 	if r.conf.Testing.MembershipReportsReader {
-		wg.Add(1)
-		go r.testingReadMembershipReportsFromNetwork(&wg)
+		r.WG.Add(1)
+		go r.testingReadMembershipReportsFromNetwork(r.WG, ctx)
 		debugLog(r.debugLevel > 10, "IGMPReporter.Run() testingReadMembershipReportsFromNetwork started")
 		added++
 	}
 
-	wg.Wait()
+	r.WG.Wait()
 
 	if added == 0 {
 		debugLog(r.debugLevel > 10, "IGMPReporter.Run() added == 0.  Recommend enabling some features")

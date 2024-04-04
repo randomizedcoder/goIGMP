@@ -156,8 +156,8 @@ type IGMPReporter struct {
 	membershipReportPayloadHack []byte
 
 	QueryNotifyCh                 chan struct{}
-	MembershipReportFromNetworkCh chan []membershipItem
-	MembershipReportToNetworkCh   chan []membershipItem
+	MembershipReportFromNetworkCh chan []MembershipItem
+	MembershipReportToNetworkCh   chan []MembershipItem
 	OutInterfaceSelectorCh        chan side
 
 	//membership map[membershipType]*btree.BTreeG[membershipItem]
@@ -307,8 +307,8 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	}
 
 	r.QueryNotifyCh = make(chan struct{}, r.conf.ChannelSize)
-	r.MembershipReportFromNetworkCh = make(chan []membershipItem, r.conf.ChannelSize)
-	r.MembershipReportToNetworkCh = make(chan []membershipItem, r.conf.ChannelSize)
+	r.MembershipReportFromNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
+	r.MembershipReportToNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
 
 	r.mapIPtoNetIP, r.mapIPtoNetAddr, r.mapNetAddrtoIP, r.mapIPtoIGMPType = r.makeIPMaps()
 

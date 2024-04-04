@@ -34,7 +34,7 @@ func (r IGMPReporter) hackReadIGMPMemershipReportPayload(filename string) (paylo
 	return payload
 }
 
-func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []membershipItem) {
+func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []MembershipItem) {
 	// const (
 	// 	// TODO this will be replaced by a dynamic list of the groups we are joined too
 	// 	allowGroupAddressCst = "232.0.0.1"

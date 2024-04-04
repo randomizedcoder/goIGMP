@@ -240,7 +240,7 @@ func (r IGMPReporter) ignoreOnNonActiveOutOrAltInterface(interf *side) (ignore b
 
 // groupRecordsToMembershipItem converts the real IGMP packet group memberships
 // into the internal representatino as a list of []membershipItem
-func (r IGMPReporter) groupRecordsToMembershipItem(groupRecords []layers.IGMPv3GroupRecord) (mitems []membershipItem) {
+func (r IGMPReporter) groupRecordsToMembershipItem(groupRecords []layers.IGMPv3GroupRecord) (mitems []MembershipItem) {
 
 	startTime := time.Now()
 	defer func() {
@@ -251,7 +251,7 @@ func (r IGMPReporter) groupRecordsToMembershipItem(groupRecords []layers.IGMPv3G
 	debugLog(r.debugLevel > 100, "groupRecordsToMembershipItem()")
 
 	for _, gr := range groupRecords {
-		var g membershipItem
+		var g MembershipItem
 		for _, sa := range gr.SourceAddresses {
 			na, err := r.netip2Addr(sa)
 			if err != nil {

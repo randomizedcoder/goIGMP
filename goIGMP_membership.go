@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-type membershipItem struct {
+type MembershipItem struct {
 	Sources []netip.Addr
 	Group   netip.Addr
 	//LastSeenTime time.Time
@@ -26,7 +26,7 @@ forLoop:
 		startTime := time.Now()
 		r.pC.WithLabelValues("readMembershipReportToNetworkCh", "loops", "count").Inc()
 
-		var groups []membershipItem
+		var groups []MembershipItem
 		select {
 		case groups = <-r.MembershipReportToNetworkCh:
 			debugLog(r.debugLevel > 10, fmt.Sprintf("readMembershipReportToNetworkCh() loops:%d groups:%v", loops, groups))
@@ -53,7 +53,7 @@ forLoop:
 		startTime := time.Now()
 		r.pC.WithLabelValues("testingReadMembershipReportsFromNetwork", "loops", "count").Inc()
 
-		var groups []membershipItem
+		var groups []MembershipItem
 		select {
 		case groups = <-r.MembershipReportFromNetworkCh:
 			debugLog(r.debugLevel > 10, fmt.Sprintf("testingReadMembershipReportsFromNetwork() loops:%d groups:%v", loops, groups))
@@ -74,7 +74,7 @@ func (r IGMPReporter) connectQueryToReport(wg *sync.WaitGroup, ctx context.Conte
 
 	debugLog(r.debugLevel > 10, "connectQueryToReport()")
 
-	var mi []membershipItem
+	var mi []MembershipItem
 
 forLoop:
 	for loops := 0; ; loops++ {

@@ -15,7 +15,7 @@ const (
 	igmpIPProtocolNumber = 2
 )
 
-func (r IGMPReporter) ipv4Header(payloadLength int, dest destIP) (iph *ipv4.Header) {
+func (r IGMPReporter) ipv4Header(payloadLength int, dest net.IP) (iph *ipv4.Header) {
 
 	iph = &ipv4.Header{
 		Version:  ipv4.Version,
@@ -24,7 +24,7 @@ func (r IGMPReporter) ipv4Header(payloadLength int, dest destIP) (iph *ipv4.Head
 		TotalLen: ipv4.HeaderLen + payloadLength,
 		TTL:      ttlCst,
 		Protocol: igmpIPProtocolNumber,
-		Dst:      r.destinationNetIP(dest),
+		Dst:      dest,
 		Options:  []byte{0x94, 0x04, 0x0, 0x0}, //router alert: https://tools.ietf.org/html/rfc2113
 	}
 

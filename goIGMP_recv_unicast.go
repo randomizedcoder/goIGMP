@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/randomizedcoder/gopacket"
+	"github.com/randomizedcoder/gopacket/layers"
 )
 
 func (r IGMPReporter) recvUnicastIGMP(wg *sync.WaitGroup, ctx context.Context, interf side) {
@@ -68,7 +68,7 @@ forLoop:
 		// Validate this is IGMP and it's the correct type of IGMP
 
 		// https://pkg.go.dev/github.com/tsg/gopacket#hdr-Basic_Usage
-		// https://github.com/google/gopacket/blob/master/layers/igmp.go#L224
+		// https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L224
 		packet := gopacket.NewPacket(*buf, layers.LayerTypeIGMP, gopacket.Default)
 
 		igmpLayer := packet.Layer(layers.LayerTypeIGMP)

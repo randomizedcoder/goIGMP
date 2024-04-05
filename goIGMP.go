@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/gopacket/layers"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/randomizedcoder/gopacket/layers"
 	"golang.org/x/net/ipv4"
 )
 
@@ -152,8 +152,6 @@ type IGMPReporter struct {
 	conRaw map[side]*ipv4.RawConn
 
 	ContMsg map[side]*ipv4.ControlMessage
-
-	membershipReportPayloadHack []byte
 
 	QueryNotifyCh                 chan struct{}
 	MembershipReportFromNetworkCh chan []MembershipItem

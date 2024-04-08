@@ -28,7 +28,7 @@ func (r IGMPReporter) openUnicastPacketConn(interf side) (c net.PacketConn) {
 
 	c, err = net.ListenPacket(protocolIGMP, localIP.String())
 	if err != nil {
-		log.Fatal(fmt.Sprintf("openUnicastPacketConn(%s) ListenPacket err:", interf), err)
+		log.Fatal(fmt.Sprintf("openUnicastPacketConn(%s) ListenPacket(%s,%s) err:", interf, protocolIGMP, localIP.String()), err)
 	}
 
 	debugLog(r.debugLevel > 10, fmt.Sprintf("openPacketUnicastConnection(%s) open on IP:%s", interf, localIP.String()))
@@ -79,7 +79,7 @@ func (r IGMPReporter) openPacketMulticastPacketConn(interf side, destinationIP n
 	// inspired by https://godoc.org/golang.org/x/net/ipv4#example-RawConn--AdvertisingOSPFHello
 	c, err = net.ListenPacket(protocolIGMP, "0.0.0.0")
 	if err != nil {
-		log.Fatal(fmt.Sprintf("openPacketMulticastPacketConn(%s) ListenPacket err:", interf), err)
+		log.Fatal(fmt.Sprintf("openPacketMulticastPacketConn(%s) ListenPacket(%s, \"0.0.0.0\") err:", interf, protocolIGMP), err)
 	}
 
 	var netIF *net.Interface
@@ -175,7 +175,7 @@ func (r IGMPReporter) getInterfaceHandle(interf side) (netIF *net.Interface, net
 
 	netIF, err = net.InterfaceByName(r.IntName[interf])
 	if err != nil {
-		log.Fatal(fmt.Sprintf("getInterfaceHandle(%s) InterfaceByName err:", interf), err)
+		log.Fatal(fmt.Sprintf("getInterfaceHandle(%s) InterfaceByName err:", r.IntName[interf]), err)
 	}
 	debugLog(r.debugLevel > 10, fmt.Sprintf("getInterfaceHandle(%s) netIF:%v", interf, netIF))
 

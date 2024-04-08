@@ -298,12 +298,6 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 
 	r.ContMsg = make(map[side]*ipv4.ControlMessage)
 
-	if len(r.conf.HackPayloadFilename) > 0 {
-		r.membershipReportPayloadHack = r.hackReadIGMPMemershipReportPayload(r.conf.HackPayloadFilename)
-	} else {
-		debugLog(r.debugLevel > 10, "NewIGMPReporter() no payload")
-	}
-
 	r.QueryNotifyCh = make(chan struct{}, r.conf.ChannelSize)
 	r.MembershipReportFromNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
 	r.MembershipReportToNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
@@ -399,7 +393,9 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	return r
 }
 
-func (r IGMPReporter) Run(ctx context.Context) {
+func (r IGMPReporter) Run(ctx context.Context, wg *sync.WaitGroup) {
+
+	defer wg.Done()
 
 	debugLog(r.debugLevel > 10, "IGMPReporter.Run()")
 
@@ -465,6 +461,7 @@ func (r IGMPReporter) Run(ctx context.Context) {
 		added++
 	}
 
+	debugLog(r.debugLevel > 10, "IGMPReporter.Run() r.WG.Wait()")
 	r.WG.Wait()
 
 	if added == 0 {

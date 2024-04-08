@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -155,7 +156,15 @@ func main() {
 
 	log.Println("goIGMPExample.go r created")
 
-	r.Run(ctx)
+	w := new(sync.WaitGroup)
+
+	w.Add(1)
+	r.Run(ctx, w)
+
+	log.Println("goIGMPExample.go w.Wait()")
+	w.Wait()
+
+	log.Println("goIGMPExample.go all done bye")
 }
 
 // initSignalHandler sets up signal handling for the process, and

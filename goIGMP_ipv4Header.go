@@ -15,7 +15,23 @@ const (
 	igmpIPProtocolNumber = 2
 )
 
-func (r IGMPReporter) ipv4Header(payloadLength int, dest net.IP) (iph *ipv4.Header) {
+func (r IGMPReporter) ipv4Header(payloadLength int, dest destIP) (iph *ipv4.Header) {
+
+	iph = &ipv4.Header{
+		Version:  ipv4.Version,
+		Len:      ipv4.HeaderLen,
+		TOS:      dscpCst,
+		TotalLen: ipv4.HeaderLen + payloadLength,
+		TTL:      ttlCst,
+		Protocol: igmpIPProtocolNumber,
+		Dst:      r.destinationNetIP(dest),
+		Options:  []byte{0x94, 0x04, 0x0, 0x0}, //router alert: https://tools.ietf.org/html/rfc2113
+	}
+
+	return iph
+}
+
+func (r IGMPReporter) ipv4HeaderNetIP(payloadLength int, dest net.IP) (iph *ipv4.Header) {
 
 	iph = &ipv4.Header{
 		Version:  ipv4.Version,
@@ -32,6 +48,7 @@ func (r IGMPReporter) ipv4Header(payloadLength int, dest net.IP) (iph *ipv4.Head
 }
 
 // destinationNetIP returns the unicast destination of the querier in the case of QueryHost
+// this really a hack to get it to send unicast
 func (r IGMPReporter) destinationNetIP(dest destIP) (netIP net.IP) {
 	if dest == QueryHost {
 		debugLog(r.debugLevel > 10, fmt.Sprintf("destinationNetIP QueryHost r.querierSourceIP:%s", r.querierSourceIP.String()))

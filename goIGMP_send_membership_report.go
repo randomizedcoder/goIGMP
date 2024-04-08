@@ -17,10 +17,6 @@ const (
 )
 
 func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []MembershipItem) {
-	// const (
-	// 	// TODO this will be replaced by a dynamic list of the groups we are joined too
-	// 	allowGroupAddressCst = "232.0.0.1"
-	// )
 
 	startTime := time.Now()
 	defer func() {
@@ -53,14 +49,12 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []Member
 		}
 
 		//err := gopacket.SerializeLayers(buffer, options, r.pbp.ethernetLayer, r.pbp.ipLayer, igmp)
-		err := gopacket.SerializeLayers(buffer, options, igmp)
+		err := gopacket.SerializeLayers(buffer, options, &igmp)
 		if err != nil {
 			log.Fatal(fmt.Sprintf("sendMembershipReport(%s) SerializeLayers err:", interf), err)
 		}
 
 		igmpPayload := buffer.Bytes()
-		//iph := r.ipv4Header(len(igmpPayload), IGMPHosts)
-		iph := r.ipv4Header(len(igmpPayload), g)
 
 		var dest destIP
 		if r.conf.UnicastMembershipReports {
@@ -69,6 +63,8 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []Member
 		} else {
 			dest = IGMPHosts
 		}
+
+		iph := r.ipv4Header(len(igmpPayload), dest)
 
 		if r.debugLevel > 10 {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport(%s) iph:%v", interf, iph))
@@ -87,17 +83,18 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []Member
 
 }
 
-// netip2Addr
-// https://djosephsen.github.io/posts/ipnet/
-func netip2Addr(ip net.IP) (netip.Addr, error) {
+// // netip2Addr
+// // https://djosephsen.github.io/posts/ipnet/
+// /* trunk-ignore(golangci-lint/unused) */
+// func netip2Addr(ip net.IP) (netip.Addr, error) {
 
-	//debugLog(m.debugLevel > 100, fmt.Sprintf("netip2Addr() ip:%s, multicast:%t", ip.String(), ip.IsMulticast()))
+// 	//debugLog(m.debugLevel > 100, fmt.Sprintf("netip2Addr() ip:%s, multicast:%t", ip.String(), ip.IsMulticast()))
 
-	if addr, ok := netip.AddrFromSlice(ip); ok {
-		return addr, nil
-	}
-	return netip.Addr{}, errors.New("invalid IP")
-}
+// 	if addr, ok := netip.AddrFromSlice(ip); ok {
+// 		return addr, nil
+// 	}
+// 	return netip.Addr{}, errors.New("invalid IP")
+// }
 
 func addr2NetIP(addr netip.Addr) (net.IP, error) {
 	if addr.IsValid() {

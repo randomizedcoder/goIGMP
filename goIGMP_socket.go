@@ -76,10 +76,13 @@ func (r IGMPReporter) openPacketMulticastPacketConn(interf side, destinationIP n
 		log.Fatalf("openPacketMulticastPacketConn(%s) !destinationIP.IsMulticast()", interf)
 	}
 
-	// inspired by https://godoc.org/golang.org/x/net/ipv4#example-RawConn--AdvertisingOSPFHello
-	c, err = net.ListenPacket(protocolIGMP, "0.0.0.0")
-	if err != nil {
-		log.Fatal(fmt.Sprintf("openPacketMulticastPacketConn(%s) ListenPacket(%s, \"0.0.0.0\") err:", interf, protocolIGMP), err)
+	// debug hack TODO remove this loop. Just want to see the syscall getting blocked
+	for i := 0; i < 10; i++ {
+		// inspired by https://godoc.org/golang.org/x/net/ipv4#example-RawConn--AdvertisingOSPFHello
+		c, err = net.ListenPacket(protocolIGMP, "0.0.0.0")
+		if err != nil {
+			log.Fatal(fmt.Sprintf("openPacketMulticastPacketConn(%s) ListenPacket(%s, \"0.0.0.0\") err:", interf, protocolIGMP), err)
+		}
 	}
 
 	var netIF *net.Interface

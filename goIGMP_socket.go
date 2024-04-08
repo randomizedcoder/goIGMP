@@ -81,7 +81,8 @@ func (r IGMPReporter) openPacketMulticastPacketConn(interf side, destinationIP n
 		// inspired by https://godoc.org/golang.org/x/net/ipv4#example-RawConn--AdvertisingOSPFHello
 		c, err = net.ListenPacket(protocolIGMP, "0.0.0.0")
 		if err != nil {
-			log.Fatal(fmt.Sprintf("openPacketMulticastPacketConn(%s) ListenPacket(%s, \"0.0.0.0\") err:", interf, protocolIGMP), err)
+			//log.Fatal(fmt.Sprintf("openPacketMulticastPacketConn(%s) ListenPacket(%s, \"0.0.0.0\") err:", interf, protocolIGMP), err)
+			log.Print(fmt.Sprintf("openPacketMulticastPacketConn(%s) ListenPacket(%s, \"0.0.0.0\") err:", interf, protocolIGMP), err)
 		}
 	}
 

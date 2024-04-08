@@ -262,16 +262,19 @@ where each Group Record has the following internal format:
 
 ## GoPacket
 
-https://github.com/google/gopacket/
+https://github.com/randomizedcoder/gopacket
+https://github.com/randomizedcoder/gopacket/layers
 
-https://github.com/google/gopacket/blob/master/layers/igmp.go
-https://github.com/google/gopacket/blob/master/layers/igmp_test.go
+https://github.com/randomizedcoder/gopacket/
+
+https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go
+https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp_test.go
 
 IGMP Query
-https://github.com/google/gopacket/blob/master/layers/igmp.go#L78
+https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L78
 
 IGMP Membership Report
-https://github.com/google/gopacket/blob/master/layers/igmp.go#L162
+https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L162
 
 
 See also

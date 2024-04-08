@@ -5,8 +5,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
+	"github.com/randomizedcoder/gopacket"
+	"github.com/randomizedcoder/gopacket/layers"
 )
 
 // See also
@@ -38,12 +38,10 @@ func (r IGMPReporter) selfQuery(interf side) {
 		FixLengths:       true,
 	}
 
-	// https://github.com/google/gopacket/blob/master/layers/igmp.go#L224
-	// Except that we created our own IGMP to add serialize functions
-	// TODO look at just adding serialize functions
-	igmp := &IGMP{
+	// https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L224
+	igmp := &layers.IGMPv1or2{
 		Type:         layers.IGMPMembershipQuery,
-		Version:      3,
+		Version:      2,
 		GroupAddress: r.mapIPtoNetIP[allZerosHosts],
 		//GroupAddress:    net.ParseIP("232.1.1.1"), There is a bug.  This turns out as 232.1.0.0 currently
 		MaxResponseTime: igmpQueryMaxResponseTimeCst,
@@ -55,6 +53,7 @@ func (r IGMPReporter) selfQuery(interf side) {
 	}
 
 	igmpPayload := buffer.Bytes()
+	//iph := r.ipv4Header(len(igmpPayload), IGMPHosts)
 	iph := r.ipv4Header(len(igmpPayload), IGMPHosts)
 
 	t := time.NewTicker(r.TimerDuration[QUERY])

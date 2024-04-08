@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/gopacket/layers"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/randomizedcoder/gopacket/layers"
 	"golang.org/x/net/ipv4"
 )
 
@@ -152,8 +152,6 @@ type IGMPReporter struct {
 	conRaw map[side]*ipv4.RawConn
 
 	ContMsg map[side]*ipv4.ControlMessage
-
-	membershipReportPayloadHack []byte
 
 	QueryNotifyCh                 chan struct{}
 	MembershipReportFromNetworkCh chan []MembershipItem
@@ -300,12 +298,6 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 
 	r.ContMsg = make(map[side]*ipv4.ControlMessage)
 
-	if len(r.conf.HackPayloadFilename) > 0 {
-		r.membershipReportPayloadHack = r.hackReadIGMPMemershipReportPayload(r.conf.HackPayloadFilename)
-	} else {
-		debugLog(r.debugLevel > 10, "NewIGMPReporter() no payload")
-	}
-
 	r.QueryNotifyCh = make(chan struct{}, r.conf.ChannelSize)
 	r.MembershipReportFromNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
 	r.MembershipReportToNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
@@ -401,7 +393,9 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	return r
 }
 
-func (r IGMPReporter) Run(ctx context.Context) {
+func (r IGMPReporter) Run(ctx context.Context, wg *sync.WaitGroup) {
+
+	defer wg.Done()
 
 	debugLog(r.debugLevel > 10, "IGMPReporter.Run()")
 
@@ -467,6 +461,7 @@ func (r IGMPReporter) Run(ctx context.Context) {
 		added++
 	}
 
+	debugLog(r.debugLevel > 10, "IGMPReporter.Run() r.WG.Wait()")
 	r.WG.Wait()
 
 	if added == 0 {

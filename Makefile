@@ -17,3 +17,5 @@ local_builddocker_goigmpexample:
 	ssh dev-sen docker load -i /home/das/go-igmp-example.tar
 	ssh dev-sen docker compose --env-file /tmp/siden/dave-dev-sen/env --file /tmp/siden/dave-dev-sen/docker-compose.igmp.yml up -d --remove-orphans
 
+# Latest hash
+# git rev-parse HEAD

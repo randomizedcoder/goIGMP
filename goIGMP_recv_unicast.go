@@ -79,21 +79,30 @@ forLoop:
 			continue
 		}
 
-		igmp, okC := igmpLayer.(*layers.IGMP)
+		_, okC := igmpLayer.(*layers.IGMP)
 		if !okC {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, localIP, loops))
-			r.pC.WithLabelValues("recvUnicastIGMP", "cast", "error").Inc()
+			r.pC.WithLabelValues("recvUnicastIGMP", "castIGMP", "error").Inc()
+		}
+
+		igmpv1or2, okG := igmpLayer.(*layers.IGMPv1or2)
+		if !okG {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, localIP, loops))
+			r.pC.WithLabelValues("recvUnicastIGMP", "castIGMP", "error").Inc()
+		}
+
+		if !okC && !okG {
 			bytePool.Put(buf)
 			continue
 		}
 
-		_, ok := r.mapUnicastIGMPTypes[igmp.Type]
-		if !ok {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d Packet is not of a valid IGMP type for this interface. Ingnoring", interf, localIP, loops))
-			r.pC.WithLabelValues("recvUnicastIGMP", "igmpType", "error").Inc()
-			bytePool.Put(buf)
-			continue
-		}
+		// _, ok := r.mapUnicastIGMPTypes[igmp.Type]
+		// if !ok {
+		// 	debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d Packet is not of a valid IGMP type for this interface. Ingnoring", interf, localIP, loops))
+		// 	r.pC.WithLabelValues("recvUnicastIGMP", "igmpType", "error").Inc()
+		// 	bytePool.Put(buf)
+		// 	continue
+		// }
 
 		// outside interface can change between ethernet/GRE
 		o, ok := r.IntOutName.Load(interf)
@@ -109,17 +118,27 @@ forLoop:
 			continue
 		}
 
-		// For type1/2 we need to decode to find the group address
-		switch igmp.Type {
-		case layers.IGMPMembershipReportV1:
-			r.sendIGMPv1or2(interf, loops, out, igmpLayer, buf)
-		case layers.IGMPMembershipReportV2:
-			r.sendIGMPv1or2(interf, loops, out, igmpLayer, buf)
-		case layers.IGMPMembershipReportV3:
+		// // For type1/2 we need to decode to find the group address
+		// switch igmp.Type {
+		// case layers.IGMPMembershipReportV1:
+		// 	r.sendIGMPv1or2(interf, loops, out, igmpLayer, buf)
+		// case layers.IGMPMembershipReportV2:
+		// 	r.sendIGMPv1or2(interf, loops, out, igmpLayer, buf)
+		// case layers.IGMPMembershipReportV3:
+		// 	r.sendIGMPv3(interf, loops, out, buf)
+		// default:
+		// 	debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d unexpected igmp.Type", interf, localIP, loops))
+		// 	r.pC.WithLabelValues("recvUnicastIGMP", "unexpectedIgmpType", "error").Inc()
+		// }
+
+		if okG {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d proxyUniToMultiv1or2 to:%s", interf, loops, out))
+			r.proxyUniToMultiv1or2(out, igmpv1or2.GroupAddress, buf)
+		}
+
+		if okC {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d sendIGMPv3 to:%s", interf, loops, out))
 			r.sendIGMPv3(interf, loops, out, buf)
-		default:
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d unexpected igmp.Type", interf, localIP, loops))
-			r.pC.WithLabelValues("recvUnicastIGMP", "unexpectedIgmpType", "error").Inc()
 		}
 
 		r.pH.WithLabelValues("recvUnicastIGMP", "sincePacketStartTime", "counter").Observe(time.Since(packetStartTime).Seconds())
@@ -128,18 +147,19 @@ forLoop:
 	}
 }
 
-// sendIGMPv1or2 needs to send to the multicast destination, so it decodes the payload to find the group
-func (r IGMPReporter) sendIGMPv1or2(interf side, loops int, out side, igmpLayer gopacket.Layer, buf *[]byte) {
+// // sendIGMPv1or2 needs to send to the multicast destination, so it decodes the payload to find the group
+// func (r IGMPReporter) sendIGMPv1or2(interf side, loops int, out side, igmpLayer gopacket.Layer, buf *[]byte) {
 
-	igmpv1or2, ok := igmpLayer.(*layers.IGMPv1or2)
-	if !ok {
-		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d igmpLayer.(*layers.IGMPv1or2) type cast error", interf, loops))
-	}
+// 	igmpv1or2, ok := igmpLayer.(*layers.IGMPv1or2)
+// 	if !ok {
+// 		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d igmpLayer.(*layers.IGMPv1or2) type cast error", interf, loops))
+// 		return
+// 	}
 
-	debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d proxyUniToMultiv1or2 to:%s", interf, loops, out))
+// 	debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d proxyUniToMultiv1or2 to:%s", interf, loops, out))
 
-	r.proxyUniToMultiv1or2(out, igmpv1or2.GroupAddress, buf)
-}
+// 	r.proxyUniToMultiv1or2(out, igmpv1or2.GroupAddress, buf)
+// }
 
 // sendIGMPv3 is more simple, and just sends to the IGMPv3 destination 224.0.0.22
 func (r IGMPReporter) sendIGMPv3(interf side, loops int, out side, buf *[]byte) {

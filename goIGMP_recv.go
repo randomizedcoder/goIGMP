@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"reflect"
 	"sync"
 	"time"
 
@@ -68,7 +69,10 @@ forLoop:
 		// Ignore traffic on the non-active outside interface
 		if r.AltOutExists {
 			if r.ignoreOnNonActiveOutOrAltInterface(&interf) {
-				debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ignoring on non active outside interface", interf, r.mapIPtoNetAddr[g], loops))
+				debugLog(r.debugLevel > 10,
+					fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ignoring on non active outside interface",
+						interf, r.mapIPtoNetAddr[g], loops))
+
 				bytePool.Put(buf)
 				continue
 			}
@@ -93,6 +97,16 @@ forLoop:
 			if !cm.Dst.IsMulticast() {
 				debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d not multicast. ??! warning", interf, r.mapIPtoNetAddr[g], loops))
 			}
+		}
+
+		// check this is not from our own interface IP
+		if reflect.DeepEqual(src, r.NetIP[interf]) {
+			debugLog(r.debugLevel > 10, fmt.Sprintf(
+				"recvIGMP(%s) g:%s loops:%d src:%s is ourself:%s. Ignoring", interf, r.mapIPtoNetAddr[g], loops, src.String(), r.NetIP[interf].String()))
+			r.pCrecvIGMP.WithLabelValues("srcSelf", interf.String(), r.mapIPtoNetAddr[g].String(), "ignore").Inc()
+
+			bytePool.Put(buf)
+			continue
 		}
 
 		//------------------

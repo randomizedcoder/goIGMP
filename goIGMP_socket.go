@@ -76,18 +76,17 @@ func (r IGMPReporter) openPacketMulticastPacketConn(interf side, destinationIP n
 		log.Fatalf("openPacketMulticastPacketConn(%s) !destinationIP.IsMulticast()", interf)
 	}
 
+	// This line fails when not running as root in the container.  Weird!! TODO Investigate
 	// inspired by https://godoc.org/golang.org/x/net/ipv4#example-RawConn--AdvertisingOSPFHello
 	c, err = net.ListenPacket(protocolIGMP, "0.0.0.0")
 	if err != nil {
 		log.Fatal(fmt.Sprintf("openPacketMulticastPacketConn(%s) ListenPacket(%s, \"0.0.0.0\") err:", interf, protocolIGMP), err)
+		//log.Print(fmt.Sprintf("openPacketMulticastPacketConn(%s) ListenPacket(%s, \"0.0.0.0\") err:", interf, protocolIGMP), err)
 	}
 
-	var netIF *net.Interface
-	var ok bool
-	if netIF, ok = r.NetIF[interf]; !ok {
+	if _, ok := r.NetIF[interf]; !ok {
 		debugLog(r.debugLevel > 10, fmt.Sprintf("openPacketMulticastConnection(%s) !r.NetIF[%s]", interf, interf))
-		netIF, _, _ = r.getInterfaceHandle(interf)
-		r.NetIF[interf] = netIF
+		r.NetIF[interf], r.NetIP[interf], r.NetAddr[interf] = r.getInterfaceHandle(interf)
 	}
 
 	p = ipv4.NewPacketConn(c)
@@ -114,7 +113,7 @@ func (r IGMPReporter) openPacketMulticastPacketConn(interf side, destinationIP n
 
 	joinIP := r.mapIPtoNetIP[r.mapNetAddrtoIP[destinationIP]]
 
-	if err := p.JoinGroup(netIF, &net.UDPAddr{IP: joinIP}); err != nil {
+	if err := p.JoinGroup(r.NetIF[interf], &net.UDPAddr{IP: joinIP}); err != nil {
 		log.Fatal(fmt.Sprintf("openPacketMulticastPacketConn(%s) JoinGroup err:", interf), err)
 	}
 	debugLog(r.debugLevel > 10, fmt.Sprintf("openPacketMulticastPacketConn(%s) joined:%s", interf, destinationIP))
@@ -152,7 +151,7 @@ func (r IGMPReporter) openRawConnection(interf side) (raw *ipv4.RawConn) {
 	if err := raw.SetMulticastTTL(igmpTTLCst); err != nil {
 		log.Fatal("openRawConnection() SetMulticastTTL err:", err)
 	}
-	debugLog(r.debugLevel > 10, fmt.Sprintf("openRawConnection(%s) SetMulticastInterface and SetMulticastTTL set", interf))
+	debugLog(r.debugLevel > 10, fmt.Sprintf("openRawConnection(%s) SetMulticastInterface and SetMulticastTTL:%d set", interf, igmpTTLCst))
 
 	if r.conf.Testing.MulticastLoopback {
 		if err := raw.SetMulticastLoopback(true); err != nil {

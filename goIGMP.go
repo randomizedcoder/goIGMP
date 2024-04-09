@@ -322,7 +322,8 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	for _, i := range r.Interfaces {
 		r.NetIF[i], r.NetIP[i], r.NetAddr[i] = r.getInterfaceHandle(i)
 		r.NetIFIndex[r.NetIF[i].Index] = i
-		r.ContMsg[i] = &ipv4.ControlMessage{IfIndex: r.NetIF[i].Index}
+		r.ContMsg[i] = &ipv4.ControlMessage{IfIndex: r.NetIF[i].Index,
+		}
 	}
 
 	debugLog(r.debugLevel > 10, "NewIGMPReporter() Opening sockets")

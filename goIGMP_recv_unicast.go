@@ -79,7 +79,13 @@ forLoop:
 			continue
 		}
 
-		igmp, _ := igmpLayer.(*layers.IGMP)
+		igmp, okC := igmpLayer.(*layers.IGMP)
+		if !okC {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, localIP, loops))
+			r.pC.WithLabelValues("recvUnicastIGMP", "cast", "error").Inc()
+			bytePool.Put(buf)
+			continue
+		}
 
 		_, ok := r.mapUnicastIGMPTypes[igmp.Type]
 		if !ok {

@@ -85,7 +85,6 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []Member
 
 // // netip2Addr
 // // https://djosephsen.github.io/posts/ipnet/
-// /* trunk-ignore(golangci-lint/unused) */
 // func netip2Addr(ip net.IP) (netip.Addr, error) {
 
 // 	//debugLog(m.debugLevel > 100, fmt.Sprintf("netip2Addr() ip:%s, multicast:%t", ip.String(), ip.IsMulticast()))

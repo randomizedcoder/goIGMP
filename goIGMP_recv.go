@@ -124,6 +124,23 @@ forLoop:
 			continue
 		}
 
+		igmpType := r.DecodeIGMPTypeFromBytes(buf)
+
+		if igmpType == layers.IGMPMembershipReportV3 {
+			// skip v3 for now
+			r.pC.WithLabelValues("recvIGMP", "skipV3", "counter").Add(float64(n))
+			bytePool.Put(buf)
+			continue
+		}
+
+		igmpT, ok := r.mapIPtoIGMPType[g][igmpType]
+		if !ok {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d Packet is not of a valid IGMP type for this group. Ignoring", interf, r.mapIPtoNetAddr[g], loops))
+			r.pCrecvIGMP.WithLabelValues("igmpT", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+			bytePool.Put(buf)
+			continue
+		}
+
 		//------------------
 		// Validate this is IGMP and it's the correct type of IGMP
 
@@ -139,17 +156,24 @@ forLoop:
 			continue
 		}
 
-		igmp, _ := igmpLayer.(*layers.IGMP)
+		// _, okC := igmpLayer.(*layers.IGMP)
+		// if !okC {
+		// 	debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, localIP, loops))
+		// 	r.pC.WithLabelValues("recvIGMP", "castIGMPv3", "error").Inc()
+		// }
 
-		//debugLog(r.debugLevel > 10, fmt.Sprint(igmp.Type))
-
-		igmpT, ok := r.mapIPtoIGMPType[g][igmp.Type]
-		if !ok {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d Packet is not of a valid IGMP type for this group. Ignoring", interf, r.mapIPtoNetAddr[g], loops))
-			r.pCrecvIGMP.WithLabelValues("igmpT", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+		igmpv1or2, okG := igmpLayer.(*layers.IGMPv1or2)
+		if !okG {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, r.mapIPtoNetAddr[g], loops))
+			r.pC.WithLabelValues("recvIGMP", "castIGMP1or2", "error").Inc()
 			bytePool.Put(buf)
 			continue
 		}
+
+		// if !okC && !okG {
+		// 	bytePool.Put(buf)
+		// 	continue
+		// }
 
 		switch igmpT {
 
@@ -175,7 +199,17 @@ forLoop:
 		case igmpTypeMembershipReport:
 			r.pCrecvIGMP.WithLabelValues("igmpTypeMembershipReport", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
 
-			mitems := r.groupRecordsToMembershipItem(igmp.GroupRecords)
+			// TODO Put v3 membership reports back later!
+
+			//mitems := r.groupRecordsToMembershipItem(igmp.GroupRecords)
+			ni, err := r.netip2Addr(igmpv1or2.GroupAddress)
+			if err != nil {
+				r.pCrecvIGMP.WithLabelValues("netip2AddrGroupAddress", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+				bytePool.Put(buf)
+				continue
+			}
+			mitems := []MembershipItem{}
+			mitems = append(mitems, MembershipItem{Group: ni})
 
 			if r.conf.MembershipReportsFromNetwork {
 				select {
@@ -189,8 +223,8 @@ forLoop:
 			}
 
 		default:
-			r.pCrecvIGMP.WithLabelValues("WrongType", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d This shouldn't happen.  Bug?", interf, r.mapIPtoNetAddr[g], loops))
+			r.pCrecvIGMP.WithLabelValues("Ignore", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d Unknown type", interf, r.mapIPtoNetAddr[g], loops))
 		}
 
 		if r.proxyIt(interf) {
@@ -254,6 +288,8 @@ func (r IGMPReporter) ignoreOnNonActiveOutOrAltInterface(interf *side) (ignore b
 
 // groupRecordsToMembershipItem converts the real IGMP packet group memberships
 // into the internal representatino as a list of []membershipItem
+// This is used for IGMPv3, so not used for now
+/* trunk-ignore(golangci-lint/unused) */
 func (r IGMPReporter) groupRecordsToMembershipItem(groupRecords []layers.IGMPv3GroupRecord) (mitems []MembershipItem) {
 
 	startTime := time.Now()
@@ -286,4 +322,9 @@ func (r IGMPReporter) groupRecordsToMembershipItem(groupRecords []layers.IGMPv3G
 	debugLog(r.debugLevel > 10, fmt.Sprintf("groupRecordsToMembershipItem() len(mitems):%d", len(mitems)))
 
 	return mitems
+}
+
+func (r IGMPReporter) DecodeIGMPTypeFromBytes(data *[]byte) (igmpType layers.IGMPType) {
+	igmpType = layers.IGMPType((*data)[0])
+	return igmpType
 }

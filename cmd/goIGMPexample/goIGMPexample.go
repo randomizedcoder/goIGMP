@@ -131,7 +131,7 @@ func main() {
 	}
 
 	if *outName == "" {
-		di, err := getDefaultRouteInterface(ctx)
+		di, err := getDefaultRouteInterface()
 		if err != nil {
 			log.Fatal("getDefaultRouteInterface err:", err)
 		}
@@ -211,7 +211,7 @@ func initPromHandler(promPath string, promListen string) {
 }
 
 // getDefaultRouteInterface find the default route interface name
-func getDefaultRouteInterface(ctx context.Context) (string, error) {
+func getDefaultRouteInterface() (string, error) {
 
 	log.Println("getDefaultRouteInterface start")
 

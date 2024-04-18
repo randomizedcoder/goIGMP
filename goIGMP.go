@@ -43,7 +43,7 @@ const (
 
 	allZerosQuad   = "0.0.0.0"
 	allHostsQuad   = "224.0.0.1"
-	allRoutersQuad = "224.0.0.1"
+	allRoutersQuad = "224.0.0.2"
 	IGMPHostsQuad  = "224.0.0.22"
 
 	allZerosHosts destIP = 0   // 0.0.0.0
@@ -52,6 +52,8 @@ const (
 	IGMPHosts     destIP = 22  // 224.0.0.22
 	QueryHost     destIP = 666 // In this case we use the query source IP
 	// https://en.wikipedia.org/wiki/Multicast_address
+	// https://pkg.go.dev/net#pkg-variables
+	// net.IPv4allsys
 
 	igmpTypeQuery            igmpType = 1
 	igmpTypeMembershipReport igmpType = 2
@@ -346,6 +348,7 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		r.mapUnicastIGMPTypes[layers.IGMPMembershipReportV3] = true
 		r.mapUnicastIGMPTypes[layers.IGMPMembershipReportV2] = true
 		r.mapUnicastIGMPTypes[layers.IGMPMembershipReportV1] = true
+		r.mapUnicastIGMPTypes[layers.IGMPLeaveGroup] = true
 	}
 
 	if r.conf.QueryNotify || r.conf.MembershipReportsFromNetwork {

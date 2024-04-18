@@ -61,7 +61,7 @@ forLoop:
 		}
 		packetStartTime := time.Now()
 
-		debugLog(r.debugLevel > 100, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d n:%d, addr:%s", interf, localIP, loops, n, addr))
+		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d n:%d, addr:%s", interf, localIP, loops, n, addr))
 		r.pC.WithLabelValues("recvUnicastIGMP", "n", "counter").Add(float64(n))
 
 		//------------------
@@ -83,6 +83,15 @@ forLoop:
 		if !okC {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, localIP, loops))
 			r.pC.WithLabelValues("recvUnicastIGMP", "cast", "error").Inc()
+
+			// TODO testing
+			igmpv1or2, ok := igmpLayer.(*layers.IGMPv1or2)
+			if !ok {
+				debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d sendIGMPv1or2 igmpLayer.(*layers.IGMPv1or2) type cast error", interf, loops))
+			}
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d igmpv1or2:%v", interf, loops, igmpv1or2))
+			// TODO testing end
+
 			bytePool.Put(buf)
 			continue
 		}
@@ -145,6 +154,7 @@ func (r IGMPReporter) sendIGMPv1or2(interf side, loops int, out side, igmpLayer 
 
 // sendIGMPv3 is more simple, and just sends to the IGMPv3 destination 224.0.0.22
 func (r IGMPReporter) sendIGMPv3(interf side, loops int, out side, buf *[]byte) {
+
 	var dest destIP
 	if r.conf.UnicastMembershipReports {
 		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d sendIGMPv3 UnicastMembershipReports dest = QueryHost", interf, loops))

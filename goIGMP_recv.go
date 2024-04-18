@@ -139,7 +139,13 @@ forLoop:
 			continue
 		}
 
-		igmp, _ := igmpLayer.(*layers.IGMP)
+		igmp, ok := igmpLayer.(*layers.IGMP)
+		if !ok {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, r.mapIPtoNetAddr[g], loops))
+			r.pCrecvIGMP.WithLabelValues("typeCast", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+			bytePool.Put(buf)
+			continue
+		}
 
 		//debugLog(r.debugLevel > 10, fmt.Sprint(igmp.Type))
 

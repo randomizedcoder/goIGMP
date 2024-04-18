@@ -101,9 +101,12 @@ func (r IGMPReporter) sendLeave(interf side, membershipItems []MembershipItem) {
 		if errSWD != nil {
 			log.Fatal(fmt.Sprintf("sendLeave(%s) SetWriteDeadline errSWD:", interf), errSWD)
 		}
+
 		if errW := r.conRaw[interf].WriteTo(iph, igmpPayload, r.ContMsg[interf]); errW != nil {
 			log.Fatal(fmt.Sprintf("sendLeave(%s) WriteTo errW:", interf), errW)
 		}
+		r.pC.WithLabelValues("sendLeave", "WriteTo", "count").Inc()
+		r.pC.WithLabelValues("sendLeave", "WriteToBytes", "count").Add(float64(len(igmpPayload)))
 
 		debugLog(r.debugLevel > 10, fmt.Sprintf("sendLeave(%s) WriteTo success! len(igmpPayload):%d", interf, len(igmpPayload)))
 	}

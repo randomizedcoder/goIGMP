@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/randomizedcoder/goIGMP"
+	"github.com/vishvananda/netlink"
 )
 
 const (
@@ -40,8 +41,7 @@ const (
 	MembershipReportsToNetworkCst   = false
 	UnicastMembershipReportsCst     = false
 	ConnectQueryToReportCst         = false
-
-	hackFilenameCst = "../../pcaps/ipmpv3_membership_report_s_172.17.200.10_g_232_0_0_1.payload"
+	LeaveToNetworkCst               = true
 
 	channelSizeCst = 10
 
@@ -101,8 +101,7 @@ func main() {
 	connectQueryToReport := flag.Bool("connectQueryToReport", false, "Testing Option. Connect the query notify channel to the membership report channel.  This is for testing only.")
 	//connectQueryToReport := flag.Bool("connectQueryToReport", ConnectQueryToReportCst, "Connect the query notify channel to the membership report channel.  This is for testing only.")
 	membershipReportsReader := flag.Bool("membershipReportsReader", false, "Testing Option. Start a goroutine to read the membership report channel to stop is getting full and blocking.")
-
-	filename := flag.String("filename", hackFilenameCst, "filename of file with igmp membership payload")
+	leaveToNetwork := flag.Bool("leaveToNetwork", false, "LeaveToNetwork channel and sender")
 
 	channelSize := flag.Int("channelSize", channelSizeCst, "channel size")
 
@@ -131,6 +130,14 @@ func main() {
 		MembershipReportsReader: *membershipReportsReader,
 	}
 
+	if *outName == "" {
+		di, err := getDefaultRouteInterface(ctx)
+		if err != nil {
+			log.Fatal("getDefaultRouteInterface err:", err)
+		}
+		outName = &di
+	}
+
 	conf := &goIGMP.Config{
 		InIntName:                    *inName,
 		OutIntName:                   *outName,
@@ -143,11 +150,11 @@ func main() {
 		MembershipReportsFromNetwork: *membershipReportsFromNetwork,
 		MembershipReportsToNetwork:   *membershipReportsToNetwork,
 		UnicastMembershipReports:     *unicastMembershipReports,
+		LeaveToNetwork:               *leaveToNetwork,
 		SocketReadDeadLine:           *readDeadline,
 		ChannelSize:                  *channelSize,
 		Gratuitous:                   *gratuitous,
 		QueryTime:                    *selfQuery,
-		HackPayloadFilename:          *filename,
 		DebugLevel:                   *dl,
 		Testing:                      *testing,
 	}
@@ -201,4 +208,28 @@ func initPromHandler(promPath string, promListen string) {
 			log.Fatal("prometheus error", err)
 		}
 	}()
+}
+
+// getDefaultRouteInterface find the default route interface name
+func getDefaultRouteInterface(ctx context.Context) (string, error) {
+
+	log.Println("getDefaultRouteInterface start")
+
+	routes, err := netlink.RouteList(nil, netlink.FAMILY_ALL)
+	if err != nil {
+		return "", err
+	}
+
+	for _, route := range routes {
+		log.Printf("route:%s", route)
+		if route.Dst == nil {
+			link, err := netlink.LinkByIndex(route.LinkIndex)
+			if err != nil {
+				return "", err
+			}
+			return link.Attrs().Name, nil
+		}
+	}
+
+	return "", fmt.Errorf("default route not found")
 }

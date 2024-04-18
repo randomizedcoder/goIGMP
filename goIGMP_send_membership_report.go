@@ -24,7 +24,7 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []Member
 	}()
 	r.pC.WithLabelValues("sendMembershipReport", "start", "count").Inc()
 
-	debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport(%s)", interf))
+	debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport(%s) start", interf))
 
 	for i, membershipItem := range membershipItems {
 
@@ -38,7 +38,7 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []Member
 
 		g, errN := addr2NetIP(membershipItem.Group)
 		if errN != nil {
-			log.Fatalf("addr2NetIP(%s) err:%v", membershipItem.Group, errN)
+			log.Fatalf("sendMembershipReport(%s) addr2NetIP(%s) err:%v", interf, membershipItem.Group, errN)
 		}
 
 		igmp := layers.IGMPv1or2{
@@ -81,6 +81,7 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []Member
 		debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport(%s) WriteTo success! len(igmpPayload):%d", interf, len(igmpPayload)))
 	}
 
+	debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport(%s) complete", interf))
 }
 
 // // netip2Addr

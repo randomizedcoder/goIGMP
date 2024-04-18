@@ -18,7 +18,7 @@ func (r IGMPReporter) readMembershipReportToNetworkCh(wg *sync.WaitGroup, ctx co
 
 	defer wg.Done()
 
-	debugLog(r.debugLevel > 10, "readMembershipReportFromWebServerCh()")
+	debugLog(r.debugLevel > 10, "readMembershipReportFromWebServerCh() start")
 
 forLoop:
 	for loops := 0; ; loops++ {
@@ -27,18 +27,24 @@ forLoop:
 		r.pC.WithLabelValues("readMembershipReportToNetworkCh", "loops", "count").Inc()
 
 		var groups []MembershipItem
+
 		select {
+
 		case groups = <-r.MembershipReportToNetworkCh:
 			debugLog(r.debugLevel > 10, fmt.Sprintf("readMembershipReportToNetworkCh() loops:%d groups:%v", loops, groups))
+
 		case <-ctx.Done():
 			debugLog(r.debugLevel > 10, "readMembershipReportToNetworkCh ctx.Done()")
 			break forLoop
+
 		}
 
 		r.sendMembershipReport(OUT, groups)
 
 		r.pH.WithLabelValues("readMembershipReportToNetworkCh", "loop", "complete").Observe(time.Since(startTime).Seconds())
 	}
+
+	debugLog(r.debugLevel > 10, "readMembershipReportFromWebServerCh() complete")
 }
 
 func (r IGMPReporter) testingReadMembershipReportsFromNetwork(wg *sync.WaitGroup, ctx context.Context) {

@@ -280,3 +280,14 @@ https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L162
 See also
 https://github.com/jmylchreest/igmpqd
 https://github.com/individuwill/mcast/
+
+## IGMP Leaves
+
+We found during testing that a Cisco 3750 with IGMP snooping would not withdraw port memebership without
+and IGMP leave being sent.  Juniper EX2200 does withdraw the membership if there's no membership report
+for some time.  For this reason, we added IGMP leave support.  We are NOT tracking the membership
+within goIGMP, so it's to the managing process to send on the LeaveToNetworkCh to send the IGMP leaves.
+
+```bash
+LeaveToNetwork
+```

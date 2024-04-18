@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	dscpCst = 0xc0 // DSCP CS6 Network control
 	//https://en.wikipedia.org/wiki/Differentiated_services
+	dscpCst              = 0xc0 // DSCP CS6 Network control
 	ttlCst               = 1
 	igmpIPProtocolNumber = 2
 )

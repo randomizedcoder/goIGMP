@@ -41,12 +41,14 @@ const (
 	GRATUITOUS ttlType = 2
 	QUERY      ttlType = 3
 
-	allZerosQuad  = "0.0.0.0"
-	allHostsQuad  = "224.0.0.1"
-	IGMPHostsQuad = "224.0.0.22"
+	allZerosQuad   = "0.0.0.0"
+	allHostsQuad   = "224.0.0.1"
+	allRoutersQuad = "224.0.0.1"
+	IGMPHostsQuad  = "224.0.0.22"
 
 	allZerosHosts destIP = 0   // 0.0.0.0
 	allHosts      destIP = 1   // 224.0.0.1
+	allRouters    destIP = 2   // 224.0.0.2
 	IGMPHosts     destIP = 22  // 224.0.0.22
 	QueryHost     destIP = 666 // In this case we use the query source IP
 	// https://en.wikipedia.org/wiki/Multicast_address
@@ -90,11 +92,11 @@ type Config struct {
 	MembershipReportsFromNetwork bool
 	MembershipReportsToNetwork   bool
 	UnicastMembershipReports     bool
+	LeaveToNetwork               bool
 	SocketReadDeadLine           time.Duration
 	ChannelSize                  int
 	Gratuitous                   time.Duration
 	QueryTime                    time.Duration
-	HackPayloadFilename          string
 	DebugLevel                   int
 	Testing                      TestingOptions
 }
@@ -121,8 +123,7 @@ func (c Config) String() string {
 		fmt.Sprintf("Testing.MulticastLoopback:%t, ", c.Testing.MulticastLoopback) + "\n" +
 		fmt.Sprintf("Testing.ConnectQueryToReport:%t, ", c.Testing.ConnectQueryToReport) + "\n" +
 		fmt.Sprintf("Testing.MembershipReportsReader:%t, ", c.Testing.MembershipReportsReader) + "\n" +
-		fmt.Sprintf("ChannelSize:%d,", c.ChannelSize) + "\n" +
-		fmt.Sprintf("HackPayloadFilename:%s, ", c.HackPayloadFilename)
+		fmt.Sprintf("ChannelSize:%d,", c.ChannelSize) + "\n"
 }
 
 type IGMPReporter struct {
@@ -156,6 +157,7 @@ type IGMPReporter struct {
 	QueryNotifyCh                 chan struct{}
 	MembershipReportFromNetworkCh chan []MembershipItem
 	MembershipReportToNetworkCh   chan []MembershipItem
+	LeaveToNetworkCh              chan []MembershipItem
 	OutInterfaceSelectorCh        chan side
 
 	//membership map[membershipType]*btree.BTreeG[membershipItem]
@@ -290,7 +292,7 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	r.NetIP = make(map[side]net.IP)
 	r.NetAddr = make(map[side]netip.Addr)
 
-	r.multicastGroups = []destIP{allHosts, IGMPHosts}
+	r.multicastGroups = []destIP{allHosts, allRouters, IGMPHosts}
 	r.uCon = make(map[side]net.PacketConn)
 	r.anyCon = make(map[side]map[netip.Addr]net.PacketConn)
 	r.mConIGMP = make(map[side]map[netip.Addr]*ipv4.PacketConn)
@@ -301,6 +303,10 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	r.QueryNotifyCh = make(chan struct{}, r.conf.ChannelSize)
 	r.MembershipReportFromNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
 	r.MembershipReportToNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
+
+	if r.conf.LeaveToNetwork {
+		r.LeaveToNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
+	}
 
 	r.mapIPtoNetIP, r.mapIPtoNetAddr, r.mapNetAddrtoIP, r.mapIPtoIGMPType = r.makeIPMaps()
 
@@ -322,8 +328,7 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	for _, i := range r.Interfaces {
 		r.NetIF[i], r.NetIP[i], r.NetAddr[i] = r.getInterfaceHandle(i)
 		r.NetIFIndex[r.NetIF[i].Index] = i
-		r.ContMsg[i] = &ipv4.ControlMessage{IfIndex: r.NetIF[i].Index,
-		}
+		r.ContMsg[i] = &ipv4.ControlMessage{IfIndex: r.NetIF[i].Index}
 	}
 
 	debugLog(r.debugLevel > 10, "NewIGMPReporter() Opening sockets")
@@ -448,6 +453,13 @@ func (r IGMPReporter) Run(ctx context.Context, wg *sync.WaitGroup) {
 		added++
 	}
 
+	if r.conf.LeaveToNetwork {
+		r.WG.Add(1)
+		go r.leaveToNetworkWorker(r.WG, ctx)
+		debugLog(r.debugLevel > 10, "IGMPReporter.Run() leaveToNetworkWorker started")
+		added++
+	}
+
 	if r.conf.Testing.ConnectQueryToReport {
 		r.WG.Add(1)
 		go r.connectQueryToReport(r.WG, ctx)
@@ -497,6 +509,7 @@ func (r IGMPReporter) makeIPMaps() (
 
 	mapIPtoNetIP[allZerosHosts] = net.ParseIP(allZerosQuad).To4()
 	mapIPtoNetIP[allHosts] = net.ParseIP(allHostsQuad).To4()
+	mapIPtoNetIP[allRouters] = net.ParseIP(allRoutersQuad).To4()
 	mapIPtoNetIP[IGMPHosts] = net.ParseIP(IGMPHostsQuad).To4()
 
 	debugLog(r.debugLevel > 100, fmt.Sprintf("makeIPMaps() mapIPtoNetIP[allZerosHosts]:%s", mapIPtoNetIP[allZerosHosts]))
@@ -511,6 +524,12 @@ func (r IGMPReporter) makeIPMaps() (
 		log.Fatal("makeIPMaps() netip2Addr allHosts err:", err)
 	}
 
+	debugLog(r.debugLevel > 100, fmt.Sprintf("makeIPMaps() mapIPtoNetIP[allRouters]:%s", mapIPtoNetIP[allRouters]))
+	ar, err := r.netip2Addr(mapIPtoNetIP[allRouters])
+	if err != nil {
+		log.Fatal("makeIPMaps() netip2Addr allRouters err:", err)
+	}
+
 	debugLog(r.debugLevel > 100, fmt.Sprintf("makeIPMaps() mapIPtoNetIP[IGMPHosts]:%s", mapIPtoNetIP[IGMPHosts]))
 	ih, err := r.netip2Addr(mapIPtoNetIP[IGMPHosts])
 	if err != nil {
@@ -519,10 +538,12 @@ func (r IGMPReporter) makeIPMaps() (
 
 	mapIPtoNetAddr[allZerosHosts] = az
 	mapIPtoNetAddr[allHosts] = ah
+	mapIPtoNetAddr[allRouters] = ar
 	mapIPtoNetAddr[IGMPHosts] = ih
 
 	mapNetAddrtoIP[az] = allZerosHosts
 	mapNetAddrtoIP[ah] = allHosts
+	mapNetAddrtoIP[ar] = allRouters
 	mapNetAddrtoIP[ih] = IGMPHosts
 
 	// true means query, false means membershipReport, doesn't exist means type doesn't match
@@ -532,6 +553,7 @@ func (r IGMPReporter) makeIPMaps() (
 	mapIPtoIGMPType[IGMPHosts][layers.IGMPMembershipReportV3] = igmpTypeMembershipReport
 	mapIPtoIGMPType[IGMPHosts][layers.IGMPMembershipReportV2] = igmpTypeMembershipReport
 	mapIPtoIGMPType[IGMPHosts][layers.IGMPMembershipReportV1] = igmpTypeMembershipReport
+	// allRouters?
 
 	return mapIPtoNetIP, mapIPtoNetAddr, mapNetAddrtoIP, mapIPtoIGMPType
 }

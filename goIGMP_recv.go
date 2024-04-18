@@ -148,14 +148,6 @@ forLoop:
 		debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d type:%s", interf, r.mapIPtoNetAddr[g], loops, igmpType))
 		r.pC.WithLabelValues("recvIGMP", igmpType.String(), "count").Inc()
 
-		_, ok := r.mapIPtoIGMPType[g][igmpType]
-		if !ok {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d Packet is not of a valid IGMP type for this group. Ignoring", interf, r.mapIPtoNetAddr[g], loops))
-			r.pCrecvIGMP.WithLabelValues("igmpT", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
-			bytePool.Put(buf)
-			continue
-		}
-
 		// https://pkg.go.dev/github.com/tsg/gopacket#hdr-Basic_Usage
 		// https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L224
 		packet := gopacket.NewPacket(*buf, layers.LayerTypeIGMP, gopacket.Default)
@@ -218,6 +210,7 @@ forLoop:
 					debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d MembershipReportFromNetworkCh failed.  Channel full?  Is something reading from the channel?", interf, r.mapIPtoNetAddr[g], loops))
 				}
 			}
+
 		case layers.IGMPMembershipReportV3:
 
 			igmp, ok := igmpLayer.(*layers.IGMP)
@@ -246,6 +239,7 @@ forLoop:
 		default:
 			r.pCrecvIGMP.WithLabelValues("WrongType", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d This shouldn't happen.  Bug?", interf, r.mapIPtoNetAddr[g], loops))
+
 		}
 
 		if r.proxyIt(interf) {

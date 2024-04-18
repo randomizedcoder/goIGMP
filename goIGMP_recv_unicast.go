@@ -94,14 +94,6 @@ forLoop:
 			continue
 		}
 
-		_, ok := r.mapUnicastIGMPTypes[igmpType]
-		if !ok {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d Packet is not of a valid IGMP type for this interface. Ingnoring", interf, localIP, loops))
-			r.pC.WithLabelValues("recvUnicastIGMP", "igmpType", "error").Inc()
-			bytePool.Put(buf)
-			continue
-		}
-
 		// outside interface can change between ethernet/GRE
 		o, ok := r.IntOutName.Load(interf)
 		if !ok {

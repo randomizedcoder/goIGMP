@@ -12,7 +12,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/randomizedcoder/gopacket/layers"
 	"golang.org/x/net/ipv4"
 )
 
@@ -55,9 +54,6 @@ const (
 	// https://pkg.go.dev/net#pkg-variables
 	// net.IPv4allsys
 
-	igmpTypeQuery            igmpType = 1
-	igmpTypeMembershipReport igmpType = 2
-
 	quantileError    = 0.05
 	summaryVecMaxAge = 5 * time.Minute
 )
@@ -65,7 +61,6 @@ const (
 type side int
 type destIP int
 type ttlType int
-type igmpType int
 
 func (s side) String() string {
 	switch s {
@@ -167,9 +162,7 @@ type IGMPReporter struct {
 	mapIPtoNetIP   map[destIP]net.IP
 	mapIPtoNetAddr map[destIP]netip.Addr
 	//mapNetIPtoIP   map[net.IP]destIP - you can't use net.IP as a key, so use netip.Addr
-	mapNetAddrtoIP      map[netip.Addr]destIP
-	mapIPtoIGMPType     map[destIP]map[layers.IGMPType]igmpType
-	mapUnicastIGMPTypes map[layers.IGMPType]bool
+	mapNetAddrtoIP map[netip.Addr]destIP
 
 	querierSourceIP netip.Addr
 	unicastDst      netip.Addr
@@ -310,7 +303,7 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		r.LeaveToNetworkCh = make(chan []MembershipItem, r.conf.ChannelSize)
 	}
 
-	r.mapIPtoNetIP, r.mapIPtoNetAddr, r.mapNetAddrtoIP, r.mapIPtoIGMPType = r.makeIPMaps()
+	r.mapIPtoNetIP, r.mapIPtoNetAddr, r.mapNetAddrtoIP = r.makeIPMaps()
 
 	if r.debugLevel > 10 {
 		for key, val := range r.mapIPtoNetIP {
@@ -321,9 +314,6 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		}
 		for key, val := range r.mapNetAddrtoIP {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("NewIGMPReporter() mapNetAddrtoIP Key: %v, Value: %v", key, val))
-		}
-		for key, val := range r.mapIPtoIGMPType {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("NewIGMPReporter() mapIPtoIGMPType Key: %v, Value: %v", key, val))
 		}
 	}
 
@@ -343,12 +333,6 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		if r.conRaw[OUT] == nil {
 			r.conRaw[OUT] = r.openRawConnection(OUT)
 		}
-
-		r.mapUnicastIGMPTypes = make(map[layers.IGMPType]bool)
-		r.mapUnicastIGMPTypes[layers.IGMPMembershipReportV3] = true
-		r.mapUnicastIGMPTypes[layers.IGMPMembershipReportV2] = true
-		r.mapUnicastIGMPTypes[layers.IGMPMembershipReportV1] = true
-		r.mapUnicastIGMPTypes[layers.IGMPLeaveGroup] = true
 	}
 
 	if r.conf.QueryNotify || r.conf.MembershipReportsFromNetwork {
@@ -502,13 +486,11 @@ func (r IGMPReporter) RunSelfQuery() {
 func (r IGMPReporter) makeIPMaps() (
 	mapIPtoNetIP map[destIP]net.IP,
 	mapIPtoNetAddr map[destIP]netip.Addr,
-	mapNetAddrtoIP map[netip.Addr]destIP,
-	mapIPtoIGMPType map[destIP]map[layers.IGMPType]igmpType) {
+	mapNetAddrtoIP map[netip.Addr]destIP) {
 
 	mapIPtoNetIP = make(map[destIP]net.IP)
 	mapIPtoNetAddr = make(map[destIP]netip.Addr)
 	mapNetAddrtoIP = make(map[netip.Addr]destIP)
-	mapIPtoIGMPType = make(map[destIP]map[layers.IGMPType]igmpType)
 
 	mapIPtoNetIP[allZerosHosts] = net.ParseIP(allZerosQuad).To4()
 	mapIPtoNetIP[allHosts] = net.ParseIP(allHostsQuad).To4()
@@ -549,16 +531,7 @@ func (r IGMPReporter) makeIPMaps() (
 	mapNetAddrtoIP[ar] = allRouters
 	mapNetAddrtoIP[ih] = IGMPHosts
 
-	// true means query, false means membershipReport, doesn't exist means type doesn't match
-	mapIPtoIGMPType[allHosts] = make(map[layers.IGMPType]igmpType)
-	mapIPtoIGMPType[allHosts][layers.IGMPMembershipQuery] = igmpTypeQuery
-	mapIPtoIGMPType[IGMPHosts] = make(map[layers.IGMPType]igmpType)
-	mapIPtoIGMPType[IGMPHosts][layers.IGMPMembershipReportV3] = igmpTypeMembershipReport
-	mapIPtoIGMPType[IGMPHosts][layers.IGMPMembershipReportV2] = igmpTypeMembershipReport
-	mapIPtoIGMPType[IGMPHosts][layers.IGMPMembershipReportV1] = igmpTypeMembershipReport
-	// allRouters?
-
-	return mapIPtoNetIP, mapIPtoNetAddr, mapNetAddrtoIP, mapIPtoIGMPType
+	return mapIPtoNetIP, mapIPtoNetAddr, mapNetAddrtoIP
 }
 
 // netip2Addr

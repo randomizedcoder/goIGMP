@@ -22,6 +22,10 @@ var (
 	}
 )
 
+const (
+	ignoreNonActiveInterfaceModulusCst = 100
+)
+
 func (r IGMPReporter) recvIGMP(wg *sync.WaitGroup, ctx context.Context, interf side, g destIP) {
 
 	defer wg.Done()
@@ -69,9 +73,11 @@ forLoop:
 		// Ignore traffic on the non-active outside interface
 		if r.AltOutExists {
 			if r.ignoreOnNonActiveOutOrAltInterface(&interf) {
-				debugLog(r.debugLevel > 10,
-					fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ignoring on non active outside interface",
-						interf, r.mapIPtoNetAddr[g], loops))
+				if loops%ignoreNonActiveInterfaceModulusCst == 0 {
+					debugLog(r.debugLevel > 10,
+						fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ignoring on non active outside interface",
+							interf, r.mapIPtoNetAddr[g], loops))
+				}
 
 				bytePool.Put(buf)
 				continue
@@ -127,6 +133,29 @@ forLoop:
 		//------------------
 		// Validate this is IGMP and it's the correct type of IGMP
 
+		// type IGMPType uint8
+
+		// const (
+		// 	IGMPMembershipQuery    IGMPType = 0x11 // General or group specific query
+		// 	IGMPMembershipReportV1 IGMPType = 0x12 // Version 1 Membership Report
+		// 	IGMPMembershipReportV2 IGMPType = 0x16 // Version 2 Membership Report
+		// 	IGMPLeaveGroup         IGMPType = 0x17 // Leave Group
+		// 	IGMPMembershipReportV3 IGMPType = 0x22 // Version 3 Membership Report
+		// )
+		// https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L18C1-L27C2
+
+		igmpType := layers.IGMPType((*buf)[0])
+		debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d type:%s", interf, r.mapIPtoNetAddr[g], loops, igmpType))
+		r.pC.WithLabelValues("recvIGMP", igmpType.String(), "count").Inc()
+
+		_, ok := r.mapIPtoIGMPType[g][igmpType]
+		if !ok {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d Packet is not of a valid IGMP type for this group. Ignoring", interf, r.mapIPtoNetAddr[g], loops))
+			r.pCrecvIGMP.WithLabelValues("igmpT", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+			bytePool.Put(buf)
+			continue
+		}
+
 		// https://pkg.go.dev/github.com/tsg/gopacket#hdr-Basic_Usage
 		// https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L224
 		packet := gopacket.NewPacket(*buf, layers.LayerTypeIGMP, gopacket.Default)
@@ -139,28 +168,10 @@ forLoop:
 			continue
 		}
 
-		igmp, ok := igmpLayer.(*layers.IGMP)
-		if !ok {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, r.mapIPtoNetAddr[g], loops))
-			r.pCrecvIGMP.WithLabelValues("typeCast", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
-			bytePool.Put(buf)
-			continue
-		}
+		switch igmpType {
 
-		//debugLog(r.debugLevel > 10, fmt.Sprint(igmp.Type))
-
-		igmpT, ok := r.mapIPtoIGMPType[g][igmp.Type]
-		if !ok {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d Packet is not of a valid IGMP type for this group. Ignoring", interf, r.mapIPtoNetAddr[g], loops))
-			r.pCrecvIGMP.WithLabelValues("igmpT", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
-			bytePool.Put(buf)
-			continue
-		}
-
-		switch igmpT {
-
-		case igmpTypeQuery:
-			r.pCrecvIGMP.WithLabelValues("igmpTypeQuery", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
+		case layers.IGMPMembershipQuery:
+			r.pCrecvIGMP.WithLabelValues("IGMPMembershipQuery", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
 
 			srcIP, err := r.netip2Addr(cm.Src)
 			if err != nil {
@@ -178,10 +189,24 @@ forLoop:
 					debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d QueryNotifyCh failed.  Channel full?  Is something reading from the channel?", interf, r.mapIPtoNetAddr[g], loops))
 				}
 			}
-		case igmpTypeMembershipReport:
-			r.pCrecvIGMP.WithLabelValues("igmpTypeMembershipReport", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
 
-			mitems := r.groupRecordsToMembershipItem(igmp.GroupRecords)
+		case layers.IGMPMembershipReportV2:
+			r.pCrecvIGMP.WithLabelValues("IGMPMembershipReportV2", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
+
+			igmpv1or2, okC := igmpLayer.(*layers.IGMPv1or2)
+			if !okC {
+				debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d type cast error igmpLayer.(*layers.IGMPv1or2)", interf, r.mapIPtoNetAddr[g], loops))
+				r.pC.WithLabelValues("recvIGMP", "cast", "error").Inc()
+			}
+
+			na, err := r.netip2Addr(igmpv1or2.GroupAddress)
+			if err != nil {
+				log.Fatal("recvIGMP netip2Addr(sa) err", err)
+			}
+
+			var mi MembershipItem
+			mi.Group = na
+			mitems := []MembershipItem{mi}
 
 			if r.conf.MembershipReportsFromNetwork {
 				select {
@@ -193,6 +218,30 @@ forLoop:
 					debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d MembershipReportFromNetworkCh failed.  Channel full?  Is something reading from the channel?", interf, r.mapIPtoNetAddr[g], loops))
 				}
 			}
+		case layers.IGMPMembershipReportV3:
+
+			igmp, ok := igmpLayer.(*layers.IGMP)
+			if !ok {
+				debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, r.mapIPtoNetAddr[g], loops))
+				r.pCrecvIGMP.WithLabelValues("typeCast", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+				bytePool.Put(buf)
+				continue
+			}
+
+			mitems := r.IGMPv3GroupRecordsToMembershipItem(igmp.GroupRecords)
+
+			if r.conf.MembershipReportsFromNetwork {
+				select {
+				case r.MembershipReportFromNetworkCh <- mitems:
+					r.pCrecvIGMP.WithLabelValues("MembershipReportFromNetworkCh", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
+					debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d MembershipReportFromNetworkCh", interf, r.mapIPtoNetAddr[g], loops))
+				default:
+					r.pCrecvIGMP.WithLabelValues("MembershipReportFromNetworkCh", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+					debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d MembershipReportFromNetworkCh failed.  Channel full?  Is something reading from the channel?", interf, r.mapIPtoNetAddr[g], loops))
+				}
+			}
+		//case layers.IGMPLeaveGroup:
+		// TODO handle leave
 
 		default:
 			r.pCrecvIGMP.WithLabelValues("WrongType", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
@@ -258,17 +307,17 @@ func (r IGMPReporter) ignoreOnNonActiveOutOrAltInterface(interf *side) (ignore b
 	return ignore
 }
 
-// groupRecordsToMembershipItem converts the real IGMP packet group memberships
+// IGMPv3GroupRecordsToMembershipItem converts the real IGMP packet group memberships
 // into the internal representatino as a list of []membershipItem
-func (r IGMPReporter) groupRecordsToMembershipItem(groupRecords []layers.IGMPv3GroupRecord) (mitems []MembershipItem) {
+func (r IGMPReporter) IGMPv3GroupRecordsToMembershipItem(groupRecords []layers.IGMPv3GroupRecord) (mitems []MembershipItem) {
 
 	startTime := time.Now()
 	defer func() {
-		r.pH.WithLabelValues("groupRecordsToMembershipItem", "start", "complete").Observe(time.Since(startTime).Seconds())
+		r.pH.WithLabelValues("IGMPv3GroupRecordsToMembershipItem", "start", "complete").Observe(time.Since(startTime).Seconds())
 	}()
-	r.pC.WithLabelValues("groupRecordsToMembershipItem", "start", "count").Inc()
+	r.pC.WithLabelValues("IGMPv3GroupRecordsToMembershipItem", "start", "count").Inc()
 
-	debugLog(r.debugLevel > 100, "groupRecordsToMembershipItem()")
+	debugLog(r.debugLevel > 100, "IGMPv3GroupRecordsToMembershipItem()")
 
 	for _, gr := range groupRecords {
 		var g MembershipItem

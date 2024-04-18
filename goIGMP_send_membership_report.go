@@ -77,6 +77,8 @@ func (r IGMPReporter) sendMembershipReport(interf side, membershipItems []Member
 		if errW := r.conRaw[interf].WriteTo(iph, igmpPayload, r.ContMsg[interf]); errW != nil {
 			log.Fatal(fmt.Sprintf("sendMembershipReport(%s) WriteTo errW:", interf), errW)
 		}
+		r.pC.WithLabelValues("sendMembershipReport", "WriteTo", "count").Inc()
+		r.pC.WithLabelValues("sendMembershipReport", "WriteToBytes", "count").Add(float64(len(igmpPayload)))
 
 		debugLog(r.debugLevel > 10, fmt.Sprintf("sendMembershipReport(%s) WriteTo success! len(igmpPayload):%d", interf, len(igmpPayload)))
 	}

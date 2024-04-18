@@ -78,6 +78,8 @@ func (r IGMPReporter) selfQuery(interf side) {
 		if err := r.conRaw[interf].WriteTo(iph, igmpPayload, r.ContMsg[interf]); err != nil {
 			log.Fatal(fmt.Sprintf("selfQuery(%s) WriteTo err:", interf), err)
 		}
+		r.pC.WithLabelValues("selfQuery", "WriteTo", "count").Inc()
+		r.pC.WithLabelValues("selfQuery", "WriteToBytes", "count").Add(float64(len(igmpPayload)))
 
 		debugLog(r.debugLevel > 10, fmt.Sprintf("selfQuery(%s) - WriteTo success, len(igmpPayload):%d", interf, len(igmpPayload)))
 		r.pH.WithLabelValues("selfQuery", "loopStartTime", "complete").Observe(time.Since(loopStartTime).Seconds())

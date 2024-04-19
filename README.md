@@ -291,3 +291,35 @@ within goIGMP, so it's to the managing process to send on the LeaveToNetworkCh t
 ```bash
 LeaveToNetwork
 ```
+
+## Junos config
+
+Junos is a bit funny with it's querier config.  For some reason 0.1 means 1 second, and 1 means 10.
+
+Ref:
+https://www.juniper.net/documentation/us/en/software/junos/multicast/topics/topic-map/mcast-igmp.html
+
+https://www.juniper.net/documentation/us/en/software/junos/cli-reference/topics/ref/statement/query-last-member-interval-edit-protocols-igmp.html
+
+```bash
+das> show configuration | display set | grep igmp
+set protocols igmp query-interval 5
+set protocols igmp query-response-interval 0.1
+set protocols igmp query-last-member-interval 5
+set protocols igmp interface vlan.200 version 2
+set protocols igmp interface vlan.200 immediate-leave
+set protocols igmp-snooping vlan all
+set protocols igmp-snooping vlan v200 immediate-leave
+```
+
+```bash
+das@dev-sen:~$ sudo tcpdump -ni enp1s0 igmp
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on enp1s0, link-type EN10MB (Ethernet), snapshot length 262144 bytes
+00:02:22.427167 IP 172.17.200.30 > 224.0.0.1: igmp query v2 [max resp time 1]            <------ max 1 second
+00:02:22.465583 IP 172.17.200.50 > 224.0.0.2: igmp v2 report 224.0.0.2
+00:02:22.525618 IP 172.17.200.50 > 224.0.0.22: igmp v2 report 224.0.0.22
+00:02:27.427585 IP 172.17.200.30 > 224.0.0.1: igmp query v2 [max resp time 1]            <------ max 1 second
+00:02:27.445600 IP 172.17.200.50 > 224.0.0.22: igmp v2 report 224.0.0.22
+00:02:27.465598 IP 172.17.200.50 > 224.0.0.2: igmp v2 report 224.0.0.2
+```

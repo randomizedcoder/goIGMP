@@ -61,11 +61,26 @@ forLoop:
 		}
 		packetStartTime := time.Now()
 
-		debugLog(r.debugLevel > 100, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d n:%d, addr:%s", interf, localIP, loops, n, addr))
+		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d n:%d, addr:%s", interf, localIP, loops, n, addr))
 		r.pC.WithLabelValues("recvUnicastIGMP", "n", "counter").Add(float64(n))
 
 		//------------------
 		// Validate this is IGMP and it's the correct type of IGMP
+
+		// type IGMPType uint8
+
+		// const (
+		// 	IGMPMembershipQuery    IGMPType = 0x11 // General or group specific query
+		// 	IGMPMembershipReportV1 IGMPType = 0x12 // Version 1 Membership Report
+		// 	IGMPMembershipReportV2 IGMPType = 0x16 // Version 2 Membership Report
+		// 	IGMPLeaveGroup         IGMPType = 0x17 // Leave Group
+		// 	IGMPMembershipReportV3 IGMPType = 0x22 // Version 3 Membership Report
+		// )
+		// https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L18C1-L27C2
+
+		igmpType := layers.IGMPType((*buf)[0])
+		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d type:%s", interf, localIP, loops, igmpType))
+		r.pC.WithLabelValues("recvUnicastIGMP", igmpType.String(), "count").Inc()
 
 		// https://pkg.go.dev/github.com/tsg/gopacket#hdr-Basic_Usage
 		// https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L224
@@ -75,22 +90,6 @@ forLoop:
 		if igmpLayer == nil {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d This isn't deserializing to IGMP.  Ignoring", interf, localIP, loops))
 			r.pC.WithLabelValues("recvUnicastIGMP", "deserializing", "error").Inc()
-			bytePool.Put(buf)
-			continue
-		}
-
-		igmp, okC := igmpLayer.(*layers.IGMP)
-		if !okC {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d type cast error igmpLayer.(*layers.IGMP)", interf, localIP, loops))
-			r.pC.WithLabelValues("recvUnicastIGMP", "cast", "error").Inc()
-			bytePool.Put(buf)
-			continue
-		}
-
-		_, ok := r.mapUnicastIGMPTypes[igmp.Type]
-		if !ok {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d Packet is not of a valid IGMP type for this interface. Ingnoring", interf, localIP, loops))
-			r.pC.WithLabelValues("recvUnicastIGMP", "igmpType", "error").Inc()
 			bytePool.Put(buf)
 			continue
 		}
@@ -110,15 +109,23 @@ forLoop:
 		}
 
 		// For type1/2 we need to decode to find the group address
-		switch igmp.Type {
+		switch igmpType {
+
+		//case layers.IGMPMembershipQuery:
+		//TODO implment this
+
 		case layers.IGMPMembershipReportV1:
 			r.sendIGMPv1or2(interf, loops, out, igmpLayer, buf)
+
 		case layers.IGMPMembershipReportV2:
 			r.sendIGMPv1or2(interf, loops, out, igmpLayer, buf)
+
 		case layers.IGMPMembershipReportV3:
 			r.sendIGMPv3(interf, loops, out, buf)
+
 		case layers.IGMPLeaveGroup:
 			r.sendIGMPLeave(interf, loops, out, buf)
+
 		default:
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d unexpected igmp.Type", interf, localIP, loops))
 			r.pC.WithLabelValues("recvUnicastIGMP", "unexpectedIgmpType", "error").Inc()
@@ -145,6 +152,7 @@ func (r IGMPReporter) sendIGMPv1or2(interf side, loops int, out side, igmpLayer 
 
 // sendIGMPv3 is more simple, and just sends to the IGMPv3 destination 224.0.0.22
 func (r IGMPReporter) sendIGMPv3(interf side, loops int, out side, buf *[]byte) {
+
 	var dest destIP
 	if r.conf.UnicastMembershipReports {
 		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) loops:%d sendIGMPv3 UnicastMembershipReports dest = QueryHost", interf, loops))

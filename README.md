@@ -1,11 +1,50 @@
 # goIGMP
+
 go IGMP toys
 
 This is a little go library to allow handling of IGMP messages for different scenarios.
 
 It was mostly designed to allow proxing IGMP messages into a docker bridge network
 to containers.  There is a special unicast response mode which allows crafting
-specific IGMP responses in the case you do not want to jsut let the kernel respond.  Essentailly, this allows you to control which IGMP responses come out of the docker network.
+specific IGMP responses in the case you do not want to jsut let the kernel respond.
+
+Essentailly, this allows you to control which IGMP responses come out of the docker network.
+
+The initial implmentation was targeting IGMPv3, but then it had to be changed to IGMPv2.
+Currently the IGMPv2 is the tested path, but most of the IGMPv3 code still remains, and
+will proobably only require small changes if something doesn't work.
+
+## Modes
+
+goIGMP essentially has x2 modes:
+- Proxy mode
+Proxy mode does IGMP proxying.
+
+- Client mode
+The client mode is designed to be integrated with another go application, allowing the go
+application to open the IGMP sockets on a conatiner running on the inside network.
+The go app can then use simple go channels to allow it to offload IGMP generation to goIGMP.
+The "example" folder includes an example membership_reporter.go.
+This client sends special unicast IGMP messages, which are the messages the proxy code
+will translate from unicast and send to the outside as multicast.
+
+
+## Special Unicast IGMP
+
+This library was designed to allow IGMP membership reports to be selectively sent to the
+outside network.  This is because there was a require to always have multicast sockets
+open on the container in the docker network, but to only send the IGMP membership reports
+wehn users were requesting the stream.
+
+Essentially, this means that this proxy is doing special user level proxying, while the
+kernel IGMP code can continue to run unchanged.  It is the unicast IGMP messages that allows
+this to happen.
+
+Wireshark is unhappy about the unciast IGMP, but it does work perfectly well.  You will
+see the packets marked as red, and that's ok.
+
+We use this IGMP proxy in conjuctions with SMCRoute https://github.com/troglobit/smcroute
+
 
 ## Interfaces "outside" and "inside"
 
@@ -14,6 +53,11 @@ The interface names are named outside and inside a little like an old Cisco PIX.
 Potentially "upstream" and "downstream" would have been better names.
 
 When there are x2 outside interfaces, the second interface is named "alternative" or "alt".
+
+The reason x2 outside interfaces exists, is because it was intended to support and Ethernet
+and a GRE interface, and allow the multicast to flow over either of these.
+
+
 
 ## Proxy from outside to inside
 
@@ -25,6 +69,7 @@ When there are x2 outside interfaces, the second interface is named "alternative
    MembershipReportFromNetwork false
    MembershipReportToNetworkCh false
    UnicastMembershipResponse   false
+   LeaveToNetwork              true
 ```
 
 <img src="./diagrams/proxy_mode_special.png" alt="proxy_mode_special" width="80%" height="80%"/>
@@ -41,6 +86,7 @@ Allow for x2 outside interfaces, with a channel to allow an application to signa
    MembershipReportFromNetwork false
    MembershipReportToNetworkCh false
    UnicastMembershipResponse   false
+   LeaveToNetwork              true
 ```
 <img src="./diagrams/proxy_mode_special_two_outside.png" alt="proxy_mode_special_two_outside" width="80%" height="80%"/>
 
@@ -57,6 +103,7 @@ Full Proxy Mode
    MembershipReportFromNetwork false
    MembershipReportToNetworkCh false
    UnicastMembershipResponse   false
+   LeaveToNetwork              true
 ```
 
 <img src="./diagrams/proxy_full.png" alt="proxy_full" width="80%" height="80%"/>
@@ -71,7 +118,7 @@ Client mode setups up channels
 
 ```bash
 type membershipItem struct {
-   Source       netip.Addr
+   Source       []netip.Addr
    Group        netip.Addr
 }
 ```
@@ -87,6 +134,7 @@ type membershipItem struct {
    MembershipReportFromNetwork true
    MembershipReportToNetworkCh true
    UnicastMembershipResponse   true
+   LeaveToNetwork              true
 ```
 
 <img src="./diagrams/igmp_client_mode.png" alt="igmp_client_mode" width="80%" height="80%"/>

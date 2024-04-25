@@ -331,7 +331,13 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		r.uCon[IN] = r.openUnicastPacketConn(IN)
 
 		if r.conRaw[OUT] == nil {
+			debugLog(r.debugLevel > 10, "openRawConnection(OUT)")
 			r.conRaw[OUT] = r.openRawConnection(OUT)
+		}
+
+		if r.AltOutExists {
+			debugLog(r.debugLevel > 10, "openRawConnection(ALTOUT)")
+			r.conRaw[ALTOUT] = r.openRawConnection(ALTOUT)
 		}
 	}
 
@@ -339,6 +345,11 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		debugLog(r.debugLevel > 10, "NewIGMPReporter() r.conf.QueryNotify || r.conf.MembershipReportsFromNetwork")
 
 		r.createPacketConns(OUT)
+
+		if r.AltOutExists {
+			debugLog(r.debugLevel > 10, "r.createPacketConns(ALTOUT)")
+			r.createPacketConns(ALTOUT)
+		}
 	}
 
 	if r.conf.ProxyOutToIn {
@@ -380,6 +391,9 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 	if r.debugLevel > 10 {
 		for key, val := range r.NetIFIndex {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("NewIGMPReporter() NetIFIndex Key: %v, Value: %v", key, val))
+		}
+		for key, val := range r.conRaw {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("NewIGMPReporter() conRaw Key: %v, Value: %v", key, val))
 		}
 	}
 

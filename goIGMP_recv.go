@@ -37,16 +37,16 @@ forLoop:
 
 		select {
 		case <-ctx.Done():
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ctx.Done()", interf, r.mapIPtoNetAddr[g], loops))
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s:%s) g:%s loops:%d ctx.Done()", interf, r.IntName[interf], r.mapIPtoNetAddr[g], loops))
 			break forLoop
 		default:
-			debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ctx is not cancelled", interf, r.mapIPtoNetAddr[g], loops))
+			debugLog(r.debugLevel > 1000, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ctx is not cancelled", interf, r.mapIPtoNetAddr[g], loops))
 		}
 
 		loopStartTime := time.Now()
 		r.pCrecvIGMP.WithLabelValues("loop", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
 
-		debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d", interf, r.mapIPtoNetAddr[g], loops))
+		debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s:%s) g:%s loops:%d", interf, r.IntName[interf], r.mapIPtoNetAddr[g], loops))
 
 		err := r.mConIGMP[interf][r.mapIPtoNetAddr[g]].SetReadDeadline(time.Now().Add(r.conf.SocketReadDeadLine))
 		if err != nil {

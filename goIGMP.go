@@ -265,6 +265,8 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		r.OutsideInterfaces = make(map[side]bool)
 		r.OutsideInterfaces[OUT] = true
 		r.OutsideInterfaces[ALTOUT] = true
+
+		debugLog(r.debugLevel > 10, "NewIGMPReporter() len(r.conf.AltOutIntName) > 0, r.AltOutExists = true")
 	}
 
 	if r.debugLevel > 10 {
@@ -338,6 +340,12 @@ func NewIGMPReporter(conf Config) *IGMPReporter {
 		if r.AltOutExists {
 			debugLog(r.debugLevel > 10, "openRawConnection(ALTOUT)")
 			r.conRaw[ALTOUT] = r.openRawConnection(ALTOUT)
+		}
+	}
+
+	if r.debugLevel > 10 {
+		for key, val := range r.conRaw {
+			debugLog(r.debugLevel > 10, fmt.Sprintf("NewIGMPReporter() conRaw Key: %v, Value: %v", key, val))
 		}
 	}
 

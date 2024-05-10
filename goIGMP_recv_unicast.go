@@ -36,13 +36,13 @@ forLoop:
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) loops:%d ctx.Done()", interf, loops))
 			break forLoop
 		default:
-			debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) loops:%d ctx is not cancelled", interf, loops))
+			debugLog(r.debugLevel > 1000, fmt.Sprintf("recvIGMP(%s) loops:%d ctx is not cancelled", interf, loops))
 		}
 
 		loopStartTime := time.Now()
 		r.pC.WithLabelValues("recvUnicastIGMP", "loops", "counter").Inc()
 
-		debugLog(r.debugLevel > 100, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d", interf, localIP, loops))
+		debugLog(r.debugLevel > 1000, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d", interf, localIP, loops))
 
 		err := r.uCon[IN].SetReadDeadline(time.Now().Add(r.conf.SocketReadDeadLine))
 		if err != nil {
@@ -105,6 +105,7 @@ forLoop:
 		out, ok := o.(side)
 		if !ok {
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d o.(side) type cast error", interf, localIP, loops))
+			r.pC.WithLabelValues("recvUnicastIGMP", "typeCast", "error").Inc()
 			continue
 		}
 

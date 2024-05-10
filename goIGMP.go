@@ -120,7 +120,8 @@ func (c Config) String() string {
 		fmt.Sprintf("Testing.MulticastLoopback:%t, ", c.Testing.MulticastLoopback) + "\n" +
 		fmt.Sprintf("Testing.ConnectQueryToReport:%t, ", c.Testing.ConnectQueryToReport) + "\n" +
 		fmt.Sprintf("Testing.MembershipReportsReader:%t, ", c.Testing.MembershipReportsReader) + "\n" +
-		fmt.Sprintf("ChannelSize:%d,", c.ChannelSize) + "\n"
+		fmt.Sprintf("ChannelSize:%d,", c.ChannelSize) + "\n" +
+		fmt.Sprintf("DebugLevel:%d, ", c.DebugLevel)
 }
 
 type IGMPReporter struct {
@@ -560,7 +561,7 @@ func (r IGMPReporter) makeIPMaps() (
 // https://djosephsen.github.io/posts/ipnet/
 func (r IGMPReporter) netip2Addr(ip net.IP) (netip.Addr, error) {
 
-	debugLog(r.debugLevel > 100, fmt.Sprintf("netip2Addr() ip:%s, multicast:%t", ip.String(), ip.IsMulticast()))
+	debugLog(r.debugLevel > 1000, fmt.Sprintf("netip2Addr() ip:%s, multicast:%t", ip.String(), ip.IsMulticast()))
 
 	if addr, ok := netip.AddrFromSlice(ip); ok {
 		return addr, nil

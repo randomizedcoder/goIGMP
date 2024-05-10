@@ -40,13 +40,13 @@ forLoop:
 			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s:%s) g:%s loops:%d ctx.Done()", interf, r.IntName[interf], r.mapIPtoNetAddr[g], loops))
 			break forLoop
 		default:
-			debugLog(r.debugLevel > 1000, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ctx is not cancelled", interf, r.mapIPtoNetAddr[g], loops))
+			debugLog(r.debugLevel > 10000, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ctx is not cancelled", interf, r.mapIPtoNetAddr[g], loops))
 		}
 
 		loopStartTime := time.Now()
 		r.pCrecvIGMP.WithLabelValues("loop", interf.String(), r.mapIPtoNetAddr[g].String(), "counter").Inc()
 
-		debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s:%s) g:%s loops:%d", interf, r.IntName[interf], r.mapIPtoNetAddr[g], loops))
+		debugLog(r.debugLevel > 1000, fmt.Sprintf("recvIGMP(%s:%s) g:%s loops:%d", interf, r.IntName[interf], r.mapIPtoNetAddr[g], loops))
 
 		err := r.mConIGMP[interf][r.mapIPtoNetAddr[g]].SetReadDeadline(time.Now().Add(r.conf.SocketReadDeadLine))
 		if err != nil {
@@ -90,7 +90,7 @@ forLoop:
 		// https://pkg.go.dev/net#Interface
 
 		if r.NetIFIndex[cm.IfIndex] != interf {
-			debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d r.NetIFIndex[%d]:%s != interf:%s. Packet not for our interface. Ignoring",
+			debugLog(r.debugLevel > 1000, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d r.NetIFIndex[%d]:%s != interf:%s. Packet not for our interface. Ignoring",
 				interf, r.mapIPtoNetAddr[g], loops, cm.IfIndex, r.NetIFIndex[cm.IfIndex], interf))
 			r.pCrecvIGMP.WithLabelValues("interf", interf.String(), r.mapIPtoNetAddr[g].String(), "ignore").Inc()
 			bytePool.Put(buf)
@@ -107,7 +107,7 @@ forLoop:
 
 		// check this is not from our own interface IP
 		if reflect.DeepEqual(src, r.NetIP[interf]) {
-			debugLog(r.debugLevel > 10, fmt.Sprintf(
+			debugLog(r.debugLevel > 1000, fmt.Sprintf(
 				"recvIGMP(%s) g:%s loops:%d src:%s is ourself:%s. Ignoring", interf, r.mapIPtoNetAddr[g], loops, src.String(), r.NetIP[interf].String()))
 			r.pCrecvIGMP.WithLabelValues("srcSelf", interf.String(), r.mapIPtoNetAddr[g].String(), "ignore").Inc()
 

@@ -50,7 +50,7 @@ forLoop:
 
 		err := r.mConIGMP[interf][r.mapIPtoNetAddr[g]].SetReadDeadline(time.Now().Add(r.conf.SocketReadDeadLine))
 		if err != nil {
-			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d SetReadDeadline err:", interf, r.mapIPtoNetAddr[g], loops), err)
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d SetReadDeadline err:%v", interf, r.mapIPtoNetAddr[g], loops, err))
 			r.pCrecvIGMP.WithLabelValues("SetReadDeadline", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
 			continue
 		}

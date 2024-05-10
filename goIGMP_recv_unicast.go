@@ -61,7 +61,7 @@ forLoop:
 		}
 		packetStartTime := time.Now()
 
-		debugLog(r.debugLevel > 10, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d n:%d, addr:%s", interf, localIP, loops, n, addr))
+		debugLog(r.debugLevel > 1000, fmt.Sprintf("recvUnicastIGMP(%s) localIP:%s loops:%d n:%d, addr:%s", interf, localIP, loops, n, addr))
 		r.pC.WithLabelValues("recvUnicastIGMP", "n", "counter").Add(float64(n))
 
 		//------------------

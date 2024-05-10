@@ -99,7 +99,7 @@ forLoop:
 			continue
 		}
 
-		debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d n:%d, cm:%s, src:%s", interf, r.mapIPtoNetAddr[g], loops, n, cm, src))
+		debugLog(r.debugLevel > 1000, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d n:%d, cm:%s, src:%s", interf, r.mapIPtoNetAddr[g], loops, n, cm, src))
 
 		if r.debugLevel > 100 {
 			if !cm.Dst.IsMulticast() {

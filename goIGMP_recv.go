@@ -50,7 +50,9 @@ forLoop:
 
 		err := r.mConIGMP[interf][r.mapIPtoNetAddr[g]].SetReadDeadline(time.Now().Add(r.conf.SocketReadDeadLine))
 		if err != nil {
-			log.Fatal(fmt.Sprintf("recvIGMP(%s) g:%s loops:%d SetReadDeadline err:", interf, r.mapIPtoNetAddr[g], loops), err)
+			debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d SetReadDeadline err:", interf, r.mapIPtoNetAddr[g], loops), err)
+			r.pCrecvIGMP.WithLabelValues("SetReadDeadline", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+			continue
 		}
 
 		buf := bytePool.Get().(*[]byte)
@@ -74,7 +76,7 @@ forLoop:
 		if r.AltOutExists {
 			if r.ignoreOnNonActiveOutOrAltInterface(&interf) {
 				if loops%ignoreNonActiveInterfaceModulusCst == 0 {
-					debugLog(r.debugLevel > 10,
+					debugLog(r.debugLevel > 1000,
 						fmt.Sprintf("recvIGMP(%s) g:%s loops:%d ignoring on non active outside interface",
 							interf, r.mapIPtoNetAddr[g], loops))
 				}
@@ -119,12 +121,15 @@ forLoop:
 		// Validate destination IP is correct
 		dstAddr, err := r.netip2Addr(cm.Dst)
 		if err != nil {
-			log.Fatal(fmt.Sprintf("recvIGMP(%s) g:%s loops:%d mapNetAddrtoIP err:", interf, r.mapIPtoNetAddr[g], loops), err)
+			debugLog(r.debugLevel > 1000, fmt.Sprintf(
+				"recvIGMP(%s) g:%s loops:%d mapNetAddrtoIP err:%v", interf, r.mapIPtoNetAddr[g], loops, err))
 			r.pCrecvIGMP.WithLabelValues("netip2Addr", interf.String(), r.mapIPtoNetAddr[g].String(), "error").Inc()
+			continue
 		}
 
 		if dstAddr != r.mapIPtoNetAddr[g] {
-			debugLog(r.debugLevel > 100, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d Packet not for our multicast group. Ignoring", interf, r.mapIPtoNetAddr[g], loops))
+			debugLog(r.debugLevel > 1000, fmt.Sprintf(
+				"recvIGMP(%s) g:%s loops:%d Packet not for our multicast group. Ignoring", interf, r.mapIPtoNetAddr[g], loops))
 			r.pCrecvIGMP.WithLabelValues("dstAddr", interf.String(), r.mapIPtoNetAddr[g].String(), "ignore").Inc()
 			bytePool.Put(buf)
 			continue
@@ -145,7 +150,7 @@ forLoop:
 		// https://github.com/randomizedcoder/gopacket/blob/master/layers/igmp.go#L18C1-L27C2
 
 		igmpType := layers.IGMPType((*buf)[0])
-		debugLog(r.debugLevel > 10, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d type:%s", interf, r.mapIPtoNetAddr[g], loops, igmpType))
+		debugLog(r.debugLevel > 1000, fmt.Sprintf("recvIGMP(%s) g:%s loops:%d type:%s", interf, r.mapIPtoNetAddr[g], loops, igmpType))
 		r.pC.WithLabelValues("recvIGMP", igmpType.String(), "count").Inc()
 
 		// https://pkg.go.dev/github.com/tsg/gopacket#hdr-Basic_Usage
@@ -294,7 +299,7 @@ func (r IGMPReporter) ignoreOnNonActiveOutOrAltInterface(interf *side) (ignore b
 		if *interf != out.(side) {
 			ignore = true
 			r.pC.WithLabelValues("ignoreOnNonActiveOutOrAltInterface", "ignore", "count").Inc()
-			debugLog(r.debugLevel > 100, fmt.Sprintf("ignoreOnNonActiveOutOrAltInterface(%s) ignoring non-active outside interface", *interf))
+			debugLog(r.debugLevel > 1000, fmt.Sprintf("ignoreOnNonActiveOutOrAltInterface(%s) ignoring non-active outside interface", *interf))
 		}
 	}
 
